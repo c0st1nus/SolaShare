@@ -1,5 +1,14 @@
-import { Elysia } from "elysia";
+import { app } from "./app";
+import { env } from "./config/env";
+import { logger } from "./lib/logger";
 
-const app = new Elysia().get("/", () => "Hello Elysia").listen(3000);
+app.listen(env.PORT);
 
-console.log(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`);
+logger.info(
+  {
+    port: env.PORT,
+    openapiPath: "/openapi",
+    apiBasePath: "/api/v1",
+  },
+  `SolaShare backend is running at 0.0.0.0:${env.PORT}`,
+);

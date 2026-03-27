@@ -8,6 +8,11 @@ Base prefix:
 
 `/api/v1`
 
+Interactive documentation:
+
+- Scalar UI: `/openapi`
+- OpenAPI JSON: `/openapi/json`
+
 Primary responsibilities:
 - authentication
 - asset browsing
@@ -17,6 +22,8 @@ Primary responsibilities:
 - claim flow preparation
 - portfolio delivery
 - admin controls
+
+During the scaffold phase, handlers may return stub responses while contracts and module boundaries are stabilized.
 
 ---
 

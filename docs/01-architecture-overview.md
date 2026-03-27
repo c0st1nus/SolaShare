@@ -41,11 +41,12 @@ Backend is responsible for:
 - portfolio read models
 
 Suggested stack:
-- Node.js
+- Bun
 - TypeScript
-- NestJS or Fastify
+- ElysiaJS
 - PostgreSQL
 - Redis for queueing/caching
+- OpenAPI with Scalar for API exploration
 
 ### 3. Solana Program
 Solana program is responsible for:
