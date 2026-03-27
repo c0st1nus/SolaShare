@@ -9,7 +9,13 @@ if (!databaseUrl) {
 }
 
 export const client = postgres(databaseUrl, {
-  max: 1,
+  max: 10,
+  idle_timeout: 20,
+  connect_timeout: 10,
 });
 
 export const db = drizzle(client, { schema });
+
+export const closeDatabaseConnection = async () => {
+  await client.end();
+};

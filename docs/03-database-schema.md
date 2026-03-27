@@ -11,6 +11,15 @@ The database does not replace blockchain truth. It acts as:
 - synchronization target
 - analytics and UX layer
 
+The implemented schema also includes operational support tables required by the backend service:
+- wallet bindings
+- verification workflow records
+- share mint tracking
+- revenue deposit tracking
+- webhook ingestion state
+- background job execution logs
+- idempotency key storage
+
 ---
 
 ## Table: users
@@ -163,6 +172,104 @@ Stores offering configuration for an asset.
 
 ---
 
+## Table: verification_requests
+
+Stores verification workflow requests for assets, issuers, documents, and revenue reports.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `asset_id UUID NULL REFERENCES assets(id)`
+- `requested_by_user_id UUID NOT NULL REFERENCES users(id)`
+- `request_type TEXT NOT NULL`
+- `status TEXT NOT NULL`
+- `payload_json JSONB NULL`
+- `submitted_at TIMESTAMP NOT NULL`
+- `resolved_at TIMESTAMP NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed request_type values
+- `asset_review`
+- `document_review`
+- `issuer_review`
+- `revenue_review`
+
+### Allowed status values
+- `pending`
+- `in_review`
+- `approved`
+- `rejected`
+- `cancelled`
+
+---
+
+## Table: verification_decisions
+
+Stores the final moderation decision for a verification request.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `verification_request_id UUID UNIQUE NOT NULL REFERENCES verification_requests(id)`
+- `decided_by_user_id UUID NOT NULL REFERENCES users(id)`
+- `outcome TEXT NOT NULL`
+- `reason TEXT NULL`
+- `metadata_json JSONB NULL`
+- `created_at TIMESTAMP NOT NULL`
+
+### Allowed outcome values
+- `approved`
+- `rejected`
+- `needs_changes`
+
+---
+
+## Table: wallet_bindings
+
+Stores wallet ownership bindings and their verification state.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `user_id UUID NOT NULL REFERENCES users(id)`
+- `wallet_address TEXT UNIQUE NOT NULL`
+- `chain TEXT NOT NULL DEFAULT 'solana'`
+- `label TEXT NULL`
+- `status TEXT NOT NULL`
+- `verification_message TEXT NULL`
+- `verified_at TIMESTAMP NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed status values
+- `pending`
+- `active`
+- `revoked`
+
+---
+
+## Table: share_mints
+
+Stores share mint preparation and on-chain mint references.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `asset_id UUID UNIQUE NOT NULL REFERENCES assets(id)`
+- `mint_address TEXT UNIQUE NOT NULL`
+- `decimals INTEGER NOT NULL`
+- `token_program TEXT NOT NULL`
+- `vault_address TEXT UNIQUE NULL`
+- `transaction_signature TEXT NULL`
+- `status TEXT NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed status values
+- `draft`
+- `prepared`
+- `minted`
+- `failed`
+
+---
+
 ## Table: investments
 
 Stores primary market buy events.
@@ -238,6 +345,28 @@ Stores distribution periods.
 
 ### Constraints
 - unique `(asset_id, epoch_number)`
+
+---
+
+## Table: revenue_deposits
+
+Stores operational funding deposits related to a revenue epoch before or during settlement.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `revenue_epoch_id UUID NOT NULL REFERENCES revenue_epochs(id)`
+- `deposited_by_user_id UUID NOT NULL REFERENCES users(id)`
+- `amount_usdc NUMERIC NOT NULL`
+- `source_reference TEXT NULL`
+- `transaction_signature TEXT NULL`
+- `status TEXT NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed status values
+- `pending`
+- `confirmed`
+- `failed`
 
 ---
 
@@ -325,6 +454,76 @@ Stores audit-relevant application events.
 
 ---
 
+## Table: webhook_events
+
+Stores webhook payloads and processing state for idempotent ingestion.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `source TEXT NOT NULL`
+- `event_type TEXT NOT NULL`
+- `external_event_id TEXT NULL`
+- `payload_json JSONB NOT NULL`
+- `status TEXT NOT NULL`
+- `received_at TIMESTAMP NOT NULL`
+- `processed_at TIMESTAMP NULL`
+- `error_message TEXT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed status values
+- `pending`
+- `processing`
+- `processed`
+- `failed`
+- `dead_letter`
+
+---
+
+## Table: job_execution_logs
+
+Stores execution logs for queued and background jobs.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `queue_name TEXT NOT NULL`
+- `job_name TEXT NOT NULL`
+- `job_id TEXT NULL`
+- `status TEXT NOT NULL`
+- `attempt INTEGER NOT NULL`
+- `payload_json JSONB NULL`
+- `result_json JSONB NULL`
+- `error_message TEXT NULL`
+- `started_at TIMESTAMP NOT NULL`
+- `finished_at TIMESTAMP NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed status values
+- `running`
+- `succeeded`
+- `failed`
+- `cancelled`
+
+---
+
+## Table: idempotency_keys
+
+Stores idempotency keys for write endpoints that must be retry-safe.
+
+### Columns
+- `scope TEXT NOT NULL`
+- `key TEXT NOT NULL`
+- `request_hash TEXT NOT NULL`
+- `response_json JSONB NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `expires_at TIMESTAMP NULL`
+
+### Constraints
+- primary key `(scope, key)`
+
+---
+
 ## Suggested Indexes
 
 ### users
@@ -341,6 +540,18 @@ Stores audit-relevant application events.
 - index on `asset_id`
 - index on `type`
 
+### verification_requests
+- index on `asset_id`
+- index on `requested_by_user_id`
+- index on `status`
+
+### wallet_bindings
+- index on `user_id`
+- index on `status`
+
+### share_mints
+- index on `status`
+
 ### investments
 - index on `user_id`
 - index on `asset_id`
@@ -351,6 +562,11 @@ Stores audit-relevant application events.
 
 ### revenue_epochs
 - unique index on `(asset_id, epoch_number)`
+- index on `status`
+
+### revenue_deposits
+- index on `revenue_epoch_id`
+- index on `deposited_by_user_id`
 - index on `status`
 
 ### claims
@@ -365,6 +581,19 @@ Stores audit-relevant application events.
 ### audit_logs
 - index on `entity_type, entity_id`
 - index on `created_at`
+
+### webhook_events
+- unique index on `(source, external_event_id)`
+- index on `status`
+- index on `received_at`
+
+### job_execution_logs
+- index on `queue_name`
+- index on `job_name`
+- index on `status`
+
+### idempotency_keys
+- index on `expires_at`
 
 ---
 
