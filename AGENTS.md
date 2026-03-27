@@ -6,6 +6,9 @@
 ## Core Stack
 Source of truth for dependencies and commands is [`package.json`](/home/const/solashare/package.json). Current stack: Bun, TypeScript, ElysiaJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod, Pino, `@solana/web3.js`, and Biome.
 
+## Documentation
+Project documentation lives in [`docs/`](/home/const/solashare/docs). Treat it as required context when working on architecture, domain behavior, API contracts, database design, indexing, on-chain flows, storage, security, and deployment decisions. Start with [`docs/README.md`](/home/const/solashare/docs/README.md), then open the relevant topic files such as `01-architecture-overview.md`, `03-database-schema.md`, `04-api-spec.md`, or `05-onchain-design.md`. If implementation and docs diverge, update the docs or explicitly call out the mismatch.
+
 ## Preferred Structure
 Organize code by responsibility:
 
