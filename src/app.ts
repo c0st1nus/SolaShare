@@ -9,8 +9,10 @@ import { claimsRoutes } from "./modules/claims/routes";
 import { investmentsRoutes } from "./modules/investments/routes";
 import { issuerRoutes } from "./modules/issuer/routes";
 import { meRoutes } from "./modules/me/routes";
+import { notificationsRoutes } from "./modules/notifications/routes";
 import { systemRoutes } from "./modules/system/routes";
 import { transactionsRoutes } from "./modules/transactions/routes";
+import { webhookRoutes } from "./modules/webhook/routes";
 import { openApiPlugin } from "./plugins/openapi";
 
 const api = new Elysia({ prefix: "/api/v1" })
@@ -22,6 +24,8 @@ const api = new Elysia({ prefix: "/api/v1" })
   .use(investmentsRoutes)
   .use(claimsRoutes)
   .use(transactionsRoutes)
+  .use(notificationsRoutes)
+  .use(webhookRoutes)
   .use(adminRoutes);
 
 export const app = new Elysia()
