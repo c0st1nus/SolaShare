@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { authPlugin, requireAuthenticatedUser } from "../../plugins/auth";
 import {
   telegramAuthBodySchema,
   telegramAuthResponseSchema,
@@ -8,7 +9,8 @@ import {
 import { authService } from "./service";
 
 export const authRoutes = new Elysia({ prefix: "/auth", tags: ["Auth"] })
-  .post("/telegram", ({ body }) => authService.authenticateWithTelegram(body), {
+  .use(authPlugin)
+  .post("/telegram", ({ body, jwt }) => authService.authenticateWithTelegram(body, jwt), {
     body: telegramAuthBodySchema,
     detail: {
       summary: "Authenticate with Telegram WebApp init data",
@@ -17,12 +19,16 @@ export const authRoutes = new Elysia({ prefix: "/auth", tags: ["Auth"] })
       200: telegramAuthResponseSchema,
     },
   })
-  .post("/wallet/link", ({ body }) => authService.linkWallet(body), {
-    body: walletLinkBodySchema,
-    detail: {
-      summary: "Link a Solana wallet to the authenticated user",
+  .post(
+    "/wallet/link",
+    ({ auth, body }) => authService.linkWallet(requireAuthenticatedUser(auth), body),
+    {
+      body: walletLinkBodySchema,
+      detail: {
+        summary: "Link a Solana wallet to the authenticated user",
+      },
+      response: {
+        200: walletLinkResponseSchema,
+      },
     },
-    response: {
-      200: walletLinkResponseSchema,
-    },
-  });
+  );

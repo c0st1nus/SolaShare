@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   issuerActionParamsSchema,
   issuerAssetBodySchema,
@@ -17,28 +18,44 @@ import {
 import { issuerService } from "./service";
 
 export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
-  .post("/assets", ({ body }) => issuerService.createAssetDraft(body), {
-    body: issuerAssetBodySchema,
-    detail: {
-      summary: "Create an issuer asset draft",
+  .use(authPlugin)
+  .post(
+    "/assets",
+    ({ auth, body }) =>
+      issuerService.createAssetDraft(requireUserRole(auth, ["issuer", "admin"]), body),
+    {
+      body: issuerAssetBodySchema,
+      detail: {
+        summary: "Create an issuer asset draft",
+      },
+      response: {
+        200: issuerAssetResponseSchema,
+      },
     },
-    response: {
-      200: issuerAssetResponseSchema,
+  )
+  .patch(
+    "/assets/:id",
+    ({ auth, params, body }) =>
+      issuerService.updateAssetDraft(requireUserRole(auth, ["issuer", "admin"]), params.id, body),
+    {
+      params: issuerActionParamsSchema,
+      body: issuerAssetUpdateBodySchema,
+      detail: {
+        summary: "Update an issuer asset draft",
+      },
+      response: {
+        200: issuerAssetResponseSchema,
+      },
     },
-  })
-  .patch("/assets/:id", ({ params, body }) => issuerService.updateAssetDraft(params.id, body), {
-    params: issuerActionParamsSchema,
-    body: issuerAssetUpdateBodySchema,
-    detail: {
-      summary: "Update an issuer asset draft",
-    },
-    response: {
-      200: issuerAssetResponseSchema,
-    },
-  })
+  )
   .post(
     "/assets/:id/documents",
-    ({ params, body }) => issuerService.registerAssetDocument(params.id, body),
+    ({ auth, params, body }) =>
+      issuerService.registerAssetDocument(
+        requireUserRole(auth, ["issuer", "admin"]),
+        params.id,
+        body,
+      ),
     {
       params: issuerActionParamsSchema,
       body: issuerAssetDocumentBodySchema,
@@ -52,7 +69,8 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   )
   .post(
     "/assets/:id/sale-terms",
-    ({ params, body }) => issuerService.saveSaleTerms(params.id, body),
+    ({ auth, params, body }) =>
+      issuerService.saveSaleTerms(requireUserRole(auth, ["issuer", "admin"]), params.id, body),
     {
       params: issuerActionParamsSchema,
       body: saleTermsBodySchema,
@@ -64,18 +82,27 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
       },
     },
   )
-  .post("/assets/:id/submit", ({ params }) => issuerService.submitAssetForWorkflow(params.id), {
-    params: issuerActionParamsSchema,
-    detail: {
-      summary: "Submit an asset to the next lifecycle step",
+  .post(
+    "/assets/:id/submit",
+    ({ auth, params }) =>
+      issuerService.submitAssetForWorkflow(requireUserRole(auth, ["issuer", "admin"]), params.id),
+    {
+      params: issuerActionParamsSchema,
+      detail: {
+        summary: "Submit an asset to the next lifecycle step",
+      },
+      response: {
+        200: issuerSubmitResponseSchema,
+      },
     },
-    response: {
-      200: issuerSubmitResponseSchema,
-    },
-  })
+  )
   .post(
     "/assets/:id/revenue-epochs",
-    ({ params, body }) => issuerService.createRevenueEpoch(params.id, body),
+    ({ auth, params, body }) => {
+      requireUserRole(auth, ["issuer", "admin"]);
+
+      return issuerService.createRevenueEpoch(params.id, body);
+    },
     {
       params: issuerActionParamsSchema,
       body: revenueEpochBodySchema,
@@ -89,7 +116,11 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   )
   .post(
     "/assets/:id/revenue-epochs/:epochId/post",
-    ({ params }) => issuerService.prepareRevenuePosting(params.id, params.epochId),
+    ({ auth, params }) => {
+      requireUserRole(auth, ["issuer", "admin"]);
+
+      return issuerService.prepareRevenuePosting(params.id, params.epochId);
+    },
     {
       params: issuerRevenuePostParamsSchema,
       detail: {

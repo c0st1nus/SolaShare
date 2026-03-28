@@ -1,9 +1,11 @@
 import { Elysia } from "elysia";
+import { authPlugin, requireAuthenticatedUser } from "../../plugins/auth";
 import { meClaimsResponseSchema, mePortfolioResponseSchema } from "./contracts";
 import { meService } from "./service";
 
 export const meRoutes = new Elysia({ prefix: "/me", tags: ["Investor"] })
-  .get("/portfolio", () => meService.getPortfolio(), {
+  .use(authPlugin)
+  .get("/portfolio", ({ auth }) => meService.getPortfolio(requireAuthenticatedUser(auth).id), {
     detail: {
       summary: "Get authenticated investor portfolio",
     },
@@ -11,7 +13,7 @@ export const meRoutes = new Elysia({ prefix: "/me", tags: ["Investor"] })
       200: mePortfolioResponseSchema,
     },
   })
-  .get("/claims", () => meService.getClaims(), {
+  .get("/claims", ({ auth }) => meService.getClaims(requireAuthenticatedUser(auth).id), {
     detail: {
       summary: "Get authenticated investor claim history",
     },

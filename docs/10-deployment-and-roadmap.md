@@ -133,6 +133,7 @@ Likely required:
 - revenue orchestration
 - portfolio projections
 
+
 ## Phase 4 — Indexer and Sync
 - event ingestion
 - holdings snapshots
