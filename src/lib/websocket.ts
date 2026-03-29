@@ -12,26 +12,51 @@ type WebSocketMessage =
   | { [key: string]: WebSocketMessage };
 
 class WebSocketServer {
-  private clients = new Map<string, WSClient>();
+  private clientsById = new Map<string, WSClient>();
+  private userConnections = new Map<string, Set<string>>();
 
-  addClient(id: string, client: WSClient) {
-    this.clients.set(id, client);
+  private connectionToUser = new Map<string, string>();
+
+  addClient(connectionId: string, userId: string, client: WSClient) {
+    this.clientsById.set(connectionId, client);
+    this.connectionToUser.set(connectionId, userId);
+    if (!this.userConnections.has(userId)) {
+      this.userConnections.set(userId, new Set());
+    }
+    this.userConnections.get(userId)!.add(connectionId);
   }
 
-  removeClient(id: string) {
-    this.clients.delete(id);
+  removeClient(connectionId: string, userId: string) {
+    this.clientsById.delete(connectionId);
+    this.connectionToUser.delete(connectionId);
+    const connections = this.userConnections.get(userId);
+    if (connections) {
+      connections.delete(connectionId);
+      if (connections.size === 0) {
+        this.userConnections.delete(userId);
+      }
+    }
+  }
+
+  getUserIdForConnection(connectionId: string): string | undefined {
+    return this.connectionToUser.get(connectionId);
   }
 
   broadcast(message: WebSocketMessage) {
     const payload = JSON.stringify(message);
-    for (const [, client] of this.clients) {
+    for (const [, client] of this.clientsById) {
       if (client.readyState === 1) client.send(payload);
     }
   }
 
   sendToUser(userId: string, message: WebSocketMessage) {
-    const client = this.clients.get(userId);
-    if (client?.readyState === 1) client.send(JSON.stringify(message));
+    const connectionIds = this.userConnections.get(userId);
+    if (!connectionIds) return;
+    const payload = JSON.stringify(message);
+    for (const connectionId of connectionIds) {
+      const client = this.clientsById.get(connectionId);
+      if (client?.readyState === 1) client.send(payload);
+    }
   }
 }
 

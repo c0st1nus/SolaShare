@@ -1,8 +1,9 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
 import { assets, claims, holdingsSnapshots, investments, revenueEpochs } from "../../db/schema";
 import type { meClaimsResponseSchema, mePortfolioResponseSchema } from "./contracts";
+import { roundMoney } from "../shared/utils";
 
 type MePortfolioResponse = z.infer<typeof mePortfolioResponseSchema>;
 type MeClaimsResponse = z.infer<typeof meClaimsResponseSchema>;
@@ -11,19 +12,22 @@ const toNumber = (value: string | number | null | undefined) => Number(value ?? 
 
 export class MeService {
   async getPortfolio(userId: string): Promise<MePortfolioResponse> {
-    const [positions, investedAggregate, claimedAggregate, revenueRows, claimedByAssetRows] =
+    const positions = await db
+      .select({
+        assetId: holdingsSnapshots.assetId,
+        title: assets.title,
+        sharesAmount: holdingsSnapshots.sharesAmount,
+        sharesPercentage: holdingsSnapshots.sharesPercentage,
+      })
+      .from(holdingsSnapshots)
+      .innerJoin(assets, eq(assets.id, holdingsSnapshots.assetId))
+      .where(eq(holdingsSnapshots.userId, userId))
+      .orderBy(assets.title);
+
+    const userAssetIds = positions.map((p) => p.assetId);
+
+    const [investedAggregate, claimedAggregate, revenueRows, claimedByAssetRows] =
       await Promise.all([
-        db
-          .select({
-            assetId: holdingsSnapshots.assetId,
-            title: assets.title,
-            sharesAmount: holdingsSnapshots.sharesAmount,
-            sharesPercentage: holdingsSnapshots.sharesPercentage,
-          })
-          .from(holdingsSnapshots)
-          .innerJoin(assets, eq(assets.id, holdingsSnapshots.assetId))
-          .where(eq(holdingsSnapshots.userId, userId))
-          .orderBy(assets.title),
         db
           .select({
             total: sql<string>`coalesce(sum(${investments.amountUsdc}), 0)`,
@@ -36,13 +40,20 @@ export class MeService {
           })
           .from(claims)
           .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
-        db
-          .select({
-            assetId: revenueEpochs.assetId,
-            distributableRevenueUsdc: revenueEpochs.distributableRevenueUsdc,
-          })
-          .from(revenueEpochs)
-          .where(or(eq(revenueEpochs.status, "posted"), eq(revenueEpochs.status, "settled"))),
+        userAssetIds.length > 0
+          ? db
+              .select({
+                assetId: revenueEpochs.assetId,
+                distributableRevenueUsdc: revenueEpochs.distributableRevenueUsdc,
+              })
+              .from(revenueEpochs)
+              .where(
+                and(
+                  inArray(revenueEpochs.assetId, userAssetIds),
+                  or(eq(revenueEpochs.status, "posted"), eq(revenueEpochs.status, "settled")),
+                ),
+              )
+          : Promise.resolve([]),
         db
           .select({
             assetId: claims.assetId,
@@ -72,9 +83,11 @@ export class MeService {
 
     const mappedPositions = positions.map((position) => {
       const sharesPercentage = toNumber(position.sharesPercentage);
-      const grossEntitlement = (revenueByAsset.get(position.assetId) ?? 0) * sharesPercentage;
-      const confirmedClaims = claimedByAsset.get(position.assetId) ?? 0;
-      const unclaimedUsdc = Math.max(grossEntitlement - confirmedClaims, 0);
+      const grossEntitlement = roundMoney(
+        (revenueByAsset.get(position.assetId) ?? 0) * sharesPercentage,
+      );
+      const confirmedClaims = roundMoney(claimedByAsset.get(position.assetId) ?? 0);
+      const unclaimedUsdc = roundMoney(Math.max(grossEntitlement - confirmedClaims, 0));
 
       return {
         asset_id: position.assetId,
@@ -88,9 +101,8 @@ export class MeService {
     return {
       total_invested_usdc: toNumber(investedAggregate[0]?.total),
       total_claimed_usdc: toNumber(claimedAggregate[0]?.total),
-      total_unclaimed_usdc: mappedPositions.reduce(
-        (sum, position) => sum + position.unclaimed_usdc,
-        0,
+      total_unclaimed_usdc: roundMoney(
+        mappedPositions.reduce((sum, position) => sum + position.unclaimed_usdc, 0),
       ),
       positions: mappedPositions,
     };

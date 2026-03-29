@@ -12,6 +12,10 @@ const envSchema = z.object({
   SOLANA_RPC_URL: z.string().url(),
   SOLANA_COMMITMENT: z.enum(["processed", "confirmed", "finalized"]),
   HELIUS_API_KEY: z.string().optional(),
+  HELIUS_WEBHOOK_SECRET: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
   ADMIN_TELEGRAM_IDS: z.string().optional(),
   ISSUER_TELEGRAM_IDS: z.string().optional(),
 });

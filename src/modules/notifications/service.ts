@@ -22,12 +22,16 @@ type NotificationInsert = {
 type DbExecutor = Pick<typeof db, "insert" | "select">;
 
 export class NotificationService {
-  addClient(id: string, ws: WSClient) {
-    wsServer.addClient(id, ws);
+  addClient(connectionId: string, userId: string, ws: WSClient) {
+    wsServer.addClient(connectionId, userId, ws);
   }
 
-  removeClient(id: string) {
-    wsServer.removeClient(id);
+  removeClient(connectionId: string, userId: string) {
+    wsServer.removeClient(connectionId, userId);
+  }
+
+  getUserIdForConnection(connectionId: string): string | undefined {
+    return wsServer.getUserIdForConnection(connectionId);
   }
 
   broadcast(notification: Notification) {
@@ -47,7 +51,7 @@ export class NotificationService {
       metadataJson: payload.metadata ?? null,
     });
 
-    this.broadcast({
+    this.sendToUser(userId, {
       type: this.toSocketType(payload.type),
       userId,
       data: {

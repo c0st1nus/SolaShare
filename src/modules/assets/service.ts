@@ -55,7 +55,9 @@ const getPublicAssetBase = async (assetId: string) => {
 export class AssetsService {
   async listAssets(query: AssetsQuery): Promise<AssetsListResponse> {
     const filters = [
-      query.status ? eq(assets.status, query.status) : inArray(assets.status, publicAssetStatuses),
+      query.status && publicAssetStatuses.includes(query.status as (typeof publicAssetStatuses)[number])
+        ? eq(assets.status, query.status)
+        : inArray(assets.status, publicAssetStatuses),
       query.energy_type ? eq(assets.energyType, query.energy_type) : undefined,
     ].filter(Boolean);
 

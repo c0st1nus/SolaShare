@@ -43,7 +43,11 @@ export const validateTelegramInitData = (telegramInitData: string, telegramBotTo
   const hash = params.get("hash");
 
   if (!hash) {
-    return;
+    throw new ApiError(
+      401,
+      "INVALID_TELEGRAM_SIGNATURE",
+      "Telegram init data is missing a signature hash",
+    );
   }
 
   if (!telegramBotToken) {

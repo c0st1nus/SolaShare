@@ -222,6 +222,10 @@ export class SettlementService {
       };
     }
 
+    if (currentInvestment.status !== "pending") {
+      throw new ApiError(409, "INVALID_INVESTMENT_STATE", "Only pending investments can be confirmed");
+    }
+
     const [currentSaleTerms] = await db
       .select()
       .from(assetSaleTerms)
@@ -239,7 +243,7 @@ export class SettlementService {
           transactionSignature,
           status: "confirmed",
         })
-        .where(eq(investments.id, currentInvestment.id));
+        .where(and(eq(investments.id, currentInvestment.id), eq(investments.status, "pending")));
 
       await recalculateHoldingsSnapshot(
         tx,
@@ -303,6 +307,10 @@ export class SettlementService {
       };
     }
 
+    if (claimRecord.status !== "pending") {
+      throw new ApiError(409, "INVALID_CLAIM_STATE", "Only pending claims can be confirmed");
+    }
+
     await db.transaction(async (tx) => {
       await tx
         .update(claims)
@@ -310,7 +318,7 @@ export class SettlementService {
           status: "confirmed",
           transactionSignature,
         })
-        .where(eq(claims.id, claimId));
+        .where(and(eq(claims.id, claimId), eq(claims.status, "pending")));
 
       const [aggregateClaimed, revenueEpochRows] = await Promise.all([
         tx
@@ -400,6 +408,14 @@ export class SettlementService {
         success: true as const,
         sync_status: "confirmed" as const,
       };
+    }
+
+    if (revenueEpoch.status !== "draft") {
+      throw new ApiError(
+        409,
+        "INVALID_REVENUE_EPOCH_STATE",
+        "Only draft revenue epochs can be confirmed for posting",
+      );
     }
 
     await db.transaction(async (tx) => {

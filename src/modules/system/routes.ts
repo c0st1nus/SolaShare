@@ -50,19 +50,25 @@ export const systemRoutes = new Elysia({ tags: ["System"] })
           .ping()
           .then(() => true)
           .catch(() => false),
-        fetch(env.SOLANA_RPC_URL, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "getHealth",
-          }),
-        })
-          .then((response) => response.ok)
-          .catch(() => false),
+        (() => {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          return fetch(env.SOLANA_RPC_URL, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "getHealth",
+            }),
+            signal: controller.signal,
+          })
+            .then((response) => response.ok)
+            .catch(() => false)
+            .finally(() => clearTimeout(timeout));
+        })(),
       ]);
 
       const status =

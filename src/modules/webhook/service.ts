@@ -35,34 +35,31 @@ export class WebhookService {
         return { handled: false, reason: "no_transfers" };
       }
 
-      for (const transfer of transfers) {
-        const memo = payload.memo || payload.signature;
-        const [investment] = await db
-          .select()
-          .from(investments)
-          .where(eq(investments.id, memo))
-          .limit(1);
+      const memo = payload.memo || payload.signature;
+      const [investment] = await db
+        .select()
+        .from(investments)
+        .where(eq(investments.id, memo))
+        .limit(1);
 
-        if (investment && investment.status === "pending") {
-          await relayQueue.add("confirm-investment", {
+      if (investment && investment.status === "pending") {
+        await relayQueue.add("confirm-investment", {
+          investmentId: investment.id,
+          txSignature: payload.signature,
+        });
+        logger.info(
+          {
             investmentId: investment.id,
             txSignature: payload.signature,
-            transfer,
-          });
-          logger.info(
-            {
-              investmentId: investment.id,
-              txSignature: payload.signature,
-              memo,
-            },
-            "Queued investment confirmation",
-          );
-        } else {
-          logger.debug(
-            { memo, status: investment?.status, signature: payload.signature },
-            "No pending investment found for webhook memo",
-          );
-        }
+            memo,
+          },
+          "Queued investment confirmation",
+        );
+      } else {
+        logger.debug(
+          { memo, status: investment?.status, signature: payload.signature },
+          "No pending investment found for webhook memo",
+        );
       }
 
       await db

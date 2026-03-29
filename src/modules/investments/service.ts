@@ -106,34 +106,59 @@ export class InvestmentsService {
       );
     }
 
-    const [existingPendingInvestment] = await db
-      .select()
-      .from(investments)
-      .where(
-        and(
-          eq(investments.userId, currentUser.id),
-          eq(investments.assetId, input.asset_id),
-          eq(investments.amountUsdc, toMoneyString(input.amount_usdc)),
-          eq(investments.status, "pending"),
-        ),
-      )
-      .orderBy(desc(investments.createdAt))
-      .limit(1);
+    const investment = await db.transaction(async (tx) => {
+      const [existingPendingInvestment] = await tx
+        .select()
+        .from(investments)
+        .where(
+          and(
+            eq(investments.userId, currentUser.id),
+            eq(investments.assetId, input.asset_id),
+            eq(investments.amountUsdc, toMoneyString(input.amount_usdc)),
+            eq(investments.status, "pending"),
+          ),
+        )
+        .orderBy(desc(investments.createdAt))
+        .limit(1);
 
-    const investment =
-      existingPendingInvestment ??
-      (
-        await db
-          .insert(investments)
-          .values({
-            userId: currentUser.id,
-            assetId: input.asset_id,
-            amountUsdc: toMoneyString(input.amount_usdc),
-            sharesReceived: toShareAmountString(quote.shares_to_receive),
-            status: "pending",
+      if (existingPendingInvestment) {
+        return existingPendingInvestment;
+      }
+
+      const [{ saleTerms }, reservedSharesAggregate] = await Promise.all([
+        getInvestableAsset(input.asset_id),
+        tx
+          .select({
+            total: sql<string>`coalesce(sum(${investments.sharesReceived}), 0)`,
           })
-          .returning()
-      )[0];
+          .from(investments)
+          .where(and(eq(investments.assetId, input.asset_id), ne(investments.status, "failed")))
+          .for("update")
+          .then((rows) => rows[0]),
+      ]);
+
+      const remainingShares = calculateRemainingShares(
+        saleTerms.totalShares,
+        toNumber(reservedSharesAggregate?.total),
+      );
+
+      if (quote.shares_to_receive > remainingShares + Number.EPSILON) {
+        throw new ApiError(409, "SALE_CAP_EXCEEDED", "Not enough shares remain in this sale");
+      }
+
+      const [inserted] = await tx
+        .insert(investments)
+        .values({
+          userId: currentUser.id,
+          assetId: input.asset_id,
+          amountUsdc: toMoneyString(input.amount_usdc),
+          sharesReceived: toShareAmountString(quote.shares_to_receive),
+          status: "pending",
+        })
+        .returning();
+
+      return inserted;
+    });
 
     // TODO @waveofem: Replace this placeholder signing payload with a real Solana
     // investment transaction builder. Expected behavior:
