@@ -1,7 +1,6 @@
 import { cors } from "@elysiajs/cors";
-import { jwt } from "@elysiajs/jwt";
 import { Elysia } from "elysia";
-import { env } from "./config/env";
+import { ApiError } from "./lib/api-error";
 import { logger } from "./lib/logger";
 import { adminRoutes } from "./modules/admin/routes";
 import { assetsRoutes } from "./modules/assets/routes";
@@ -10,8 +9,10 @@ import { claimsRoutes } from "./modules/claims/routes";
 import { investmentsRoutes } from "./modules/investments/routes";
 import { issuerRoutes } from "./modules/issuer/routes";
 import { meRoutes } from "./modules/me/routes";
+import { notificationsRoutes } from "./modules/notifications/routes";
 import { systemRoutes } from "./modules/system/routes";
 import { transactionsRoutes } from "./modules/transactions/routes";
+import { webhookRoutes } from "./modules/webhook/routes";
 import { openApiPlugin } from "./plugins/openapi";
 
 const api = new Elysia({ prefix: "/api/v1" })
@@ -23,16 +24,12 @@ const api = new Elysia({ prefix: "/api/v1" })
   .use(investmentsRoutes)
   .use(claimsRoutes)
   .use(transactionsRoutes)
+  .use(notificationsRoutes)
+  .use(webhookRoutes)
   .use(adminRoutes);
 
 export const app = new Elysia()
   .use(cors())
-  .use(
-    jwt({
-      name: "jwt",
-      secret: env.JWT_SECRET,
-    }),
-  )
   .use(openApiPlugin)
   .get("/", () => ({
     service: "solashare-api",
@@ -44,7 +41,15 @@ export const app = new Elysia()
   .use(api)
   .onError(({ code, error, set, path }) => {
     const status =
-      code === "VALIDATION" ? 422 : code === "NOT_FOUND" ? 404 : code === "PARSE" ? 400 : 500;
+      error instanceof ApiError
+        ? error.status
+        : code === "VALIDATION"
+          ? 422
+          : code === "NOT_FOUND"
+            ? 404
+            : code === "PARSE"
+              ? 400
+              : 500;
 
     logger.error(
       {
@@ -61,11 +66,13 @@ export const app = new Elysia()
     return {
       error: {
         code:
-          code === "VALIDATION"
-            ? "VALIDATION_ERROR"
-            : code === "NOT_FOUND"
-              ? "NOT_FOUND"
-              : "INTERNAL_SERVER_ERROR",
+          error instanceof ApiError
+            ? error.code
+            : code === "VALIDATION"
+              ? "VALIDATION_ERROR"
+              : code === "NOT_FOUND"
+                ? "NOT_FOUND"
+                : "INTERNAL_SERVER_ERROR",
         message:
           code === "VALIDATION"
             ? "Request validation failed"

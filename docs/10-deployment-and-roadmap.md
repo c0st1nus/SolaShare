@@ -99,6 +99,8 @@ Likely required:
 - `REDIS_URL`
 - `JWT_SECRET`
 - `TELEGRAM_BOT_TOKEN`
+- `ADMIN_TELEGRAM_IDS`
+- `ISSUER_TELEGRAM_IDS`
 - `SOLANA_RPC_URL`
 - `SOLANA_PROGRAM_ID`
 - `STORAGE_PROVIDER`
@@ -132,6 +134,15 @@ Likely required:
 - transaction preparation
 - revenue orchestration
 - portfolio projections
+
+Current status:
+- most off-chain backend flows are implemented
+- Docker-based Postgres/Redis local setup is in use
+- integration tests cover issuer review, investment confirmation, revenue posting confirmation,
+  claim confirmation, and webhook ingestion
+- remaining backend integration work is concentrated in real on-chain transaction assembly and
+  wallet signature verification
+
 
 ## Phase 4 — Indexer and Sync
 - event ingestion

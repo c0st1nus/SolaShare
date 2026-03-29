@@ -36,6 +36,7 @@ export const issuerAssetDocumentBodySchema = z.object({
   storage_provider: storageProviderSchema,
   storage_uri: z.string().url(),
   content_hash: z.string().min(3),
+  is_public: z.boolean().default(false),
 });
 
 export const issuerAssetDocumentResponseSchema = z.object({
@@ -84,6 +85,7 @@ export const issuerRevenuePostParamsSchema = z.object({
 
 export const revenuePostResponseSchema = z.object({
   success: z.literal(true),
+  operation_id: uuidSchema,
   transaction_payload: z.object({
     kind: z.literal("revenue_post"),
     asset_id: uuidSchema,

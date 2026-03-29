@@ -14,6 +14,7 @@ export const investmentQuoteResponseSchema = z.object({
 
 export const investmentPrepareResponseSchema = z.object({
   success: z.literal(true),
+  operation_id: uuidSchema,
   signing_payload: z.object({
     kind: z.literal("investment"),
     asset_id: uuidSchema,

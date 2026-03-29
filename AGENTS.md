@@ -66,4 +66,11 @@ After every substantive change:
 3. Run tests if a real test runner exists
 4. Fix issues instead of silencing them
 
+Before any commit:
+
+1. Run `bun run check`
+2. Ensure the TypeScript compiler is clean with no `tsc --noEmit` errors
+3. Run `bun run lint`
+4. Fix all reported issues before creating the commit
+
 Do not add unnecessary frameworks, swap runtimes, replace Elysia or Drizzle, or over-engineer the dev infrastructure.
