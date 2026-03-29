@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   adminAssetActionParamsSchema,
   adminAssetActionResponseSchema,
@@ -9,40 +10,58 @@ import {
 import { adminService } from "./service";
 
 export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
-  .post("/assets/:id/verify", ({ params, body }) => adminService.verifyAsset(params.id, body), {
-    params: adminAssetActionParamsSchema,
-    body: adminVerifyBodySchema,
-    detail: {
-      summary: "Verify or reject an asset",
+  .use(authPlugin)
+  .post(
+    "/assets/:id/verify",
+    ({ auth, params, body }) =>
+      adminService.verifyAsset(requireUserRole(auth, ["admin"]), params.id, body),
+    {
+      params: adminAssetActionParamsSchema,
+      body: adminVerifyBodySchema,
+      detail: {
+        summary: "Verify or reject an asset",
+      },
+      response: {
+        200: adminAssetActionResponseSchema,
+      },
     },
-    response: {
-      200: adminAssetActionResponseSchema,
+  )
+  .post(
+    "/assets/:id/freeze",
+    ({ auth, params }) => adminService.freezeAsset(requireUserRole(auth, ["admin"]), params.id),
+    {
+      params: adminAssetActionParamsSchema,
+      detail: {
+        summary: "Freeze an asset",
+      },
+      response: {
+        200: adminAssetActionResponseSchema,
+      },
     },
-  })
-  .post("/assets/:id/freeze", ({ params }) => adminService.freezeAsset(params.id), {
-    params: adminAssetActionParamsSchema,
-    detail: {
-      summary: "Freeze an asset",
+  )
+  .post(
+    "/assets/:id/close",
+    ({ auth, params }) => adminService.closeAsset(requireUserRole(auth, ["admin"]), params.id),
+    {
+      params: adminAssetActionParamsSchema,
+      detail: {
+        summary: "Close an asset lifecycle",
+      },
+      response: {
+        200: adminAssetActionResponseSchema,
+      },
     },
-    response: {
-      200: adminAssetActionResponseSchema,
+  )
+  .get(
+    "/audit-logs",
+    ({ auth, query }) => adminService.listAuditLogs(requireUserRole(auth, ["admin"]), query),
+    {
+      query: auditLogsQuerySchema,
+      detail: {
+        summary: "List audit log events",
+      },
+      response: {
+        200: auditLogsResponseSchema,
+      },
     },
-  })
-  .post("/assets/:id/close", ({ params }) => adminService.closeAsset(params.id), {
-    params: adminAssetActionParamsSchema,
-    detail: {
-      summary: "Close an asset lifecycle",
-    },
-    response: {
-      200: adminAssetActionResponseSchema,
-    },
-  })
-  .get("/audit-logs", ({ query }) => adminService.listAuditLogs(query), {
-    query: auditLogsQuerySchema,
-    detail: {
-      summary: "List audit log events",
-    },
-    response: {
-      200: auditLogsResponseSchema,
-    },
-  });
+  );

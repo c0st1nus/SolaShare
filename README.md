@@ -1,6 +1,6 @@
 # SolaShare Backend
 
-Backend scaffold for a Solana-based RWA platform built with Bun, ElysiaJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod, and Pino.
+Backend for a Solana-based RWA platform built with Bun, ElysiaJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod, and Pino.
 
 ## Prerequisites
 
@@ -27,10 +27,10 @@ cp .env.example .env
 docker compose up -d
 ```
 
-4. Initialize database schema:
+4. Apply database migrations:
 
 ```bash
-bun run db:push
+bun run db:migrate
 ```
 
 5. Start the API:
@@ -55,10 +55,13 @@ Readiness check: `http://localhost:3000/api/v1/ready`
 
 Current state:
 
-- backend module structure is scaffolded
+- asset catalog, issuer workflow, admin review, portfolio projections, investment preparation,
+  revenue draft flow, claim preparation, webhook ingestion, queue-backed investment confirmation,
+  and transaction confirmation are implemented against PostgreSQL
 - OpenAPI and Scalar documentation are enabled
-- route contracts are defined with Zod
-- many business handlers still return stub responses while services are implemented
+- integration tests cover the main off-chain workflow and webhook ingestion
+- Solana transaction assembly and wallet signature verification remain explicit `TODO @waveofem`
+  integration points in code
 
 ## Commands
 
@@ -66,6 +69,7 @@ Current state:
 bun run check
 bun run lint
 bun run format
+bun run test
 bun run db:generate
 bun run db:migrate
 bun run db:push

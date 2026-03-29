@@ -99,9 +99,11 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets/:id/revenue-epochs",
     ({ auth, params, body }) => {
-      requireUserRole(auth, ["issuer", "admin"]);
-
-      return issuerService.createRevenueEpoch(params.id, body);
+      return issuerService.createRevenueEpoch(
+        requireUserRole(auth, ["issuer", "admin"]),
+        params.id,
+        body,
+      );
     },
     {
       params: issuerActionParamsSchema,
@@ -117,9 +119,11 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets/:id/revenue-epochs/:epochId/post",
     ({ auth, params }) => {
-      requireUserRole(auth, ["issuer", "admin"]);
-
-      return issuerService.prepareRevenuePosting(params.id, params.epochId);
+      return issuerService.prepareRevenuePosting(
+        requireUserRole(auth, ["issuer", "admin"]),
+        params.id,
+        params.epochId,
+      );
     },
     {
       params: issuerRevenuePostParamsSchema,

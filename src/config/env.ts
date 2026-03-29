@@ -5,9 +5,12 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
   JWT_SECRET: z.string().min(1),
+  TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   SOLANA_RPC_URL: z.string().url(),
   SOLANA_COMMITMENT: z.enum(["processed", "confirmed", "finalized"]),
   HELIUS_API_KEY: z.string().optional(),
+  ADMIN_TELEGRAM_IDS: z.string().optional(),
+  ISSUER_TELEGRAM_IDS: z.string().optional(),
 });
 
 export const env = envSchema.parse(Bun.env);

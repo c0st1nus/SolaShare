@@ -1,7 +1,9 @@
+import { createHmac } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
+import { env } from "../../config/env";
 import { db } from "../../db";
-import { users, walletBindings } from "../../db/schema";
+import { auditLogs, users, walletBindings } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
 import type {
   telegramAuthBodySchema,
@@ -21,6 +23,68 @@ type JwtSigner = {
 
 type AuthenticatedUser = {
   id: string;
+};
+
+const bootstrapRoleMap = {
+  admin: new Set(
+    (env.ADMIN_TELEGRAM_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+  issuer: new Set(
+    (env.ISSUER_TELEGRAM_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+};
+
+const getBootstrapRole = (telegramUserId: string) => {
+  if (bootstrapRoleMap.admin.has(telegramUserId)) {
+    return "admin" as const;
+  }
+
+  if (bootstrapRoleMap.issuer.has(telegramUserId)) {
+    return "issuer" as const;
+  }
+
+  return "investor" as const;
+};
+
+const validateTelegramInitData = (telegramInitData: string) => {
+  const params = new URLSearchParams(telegramInitData);
+  const hash = params.get("hash");
+
+  if (!hash) {
+    return;
+  }
+
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    throw new ApiError(
+      500,
+      "TELEGRAM_BOT_TOKEN_REQUIRED",
+      "TELEGRAM_BOT_TOKEN must be configured to validate signed Telegram init data",
+    );
+  }
+
+  params.delete("hash");
+
+  const dataCheckString = [...params.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+
+  const secretKey = createHmac("sha256", "WebAppData").update(env.TELEGRAM_BOT_TOKEN).digest();
+  const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+  if (computedHash !== hash) {
+    throw new ApiError(
+      401,
+      "INVALID_TELEGRAM_SIGNATURE",
+      "Telegram init data signature is invalid",
+    );
+  }
 };
 
 const parseTelegramInitData = (telegramInitData: string) => {
@@ -71,27 +135,52 @@ export class AuthService {
     input: TelegramAuthBody,
     jwt: JwtSigner,
   ): Promise<TelegramAuthResponse> {
+    validateTelegramInitData(input.telegram_init_data);
+
     const parsedIdentity = parseTelegramInitData(input.telegram_init_data);
+    const bootstrapRole = getBootstrapRole(parsedIdentity.telegramUserId);
     const [existingUser] = await db
       .select()
       .from(users)
       .where(eq(users.telegramUserId, parsedIdentity.telegramUserId))
       .limit(1);
 
-    const user =
-      existingUser ??
-      (
-        await db
-          .insert(users)
-          .values({
-            telegramUserId: parsedIdentity.telegramUserId,
-            telegramUsername: parsedIdentity.telegramUsername,
-            displayName: parsedIdentity.displayName,
-          })
-          .returning()
-      )[0];
+    const user = existingUser
+      ? (
+          await db
+            .update(users)
+            .set({
+              telegramUsername: parsedIdentity.telegramUsername,
+              displayName: parsedIdentity.displayName,
+              role: bootstrapRole,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, existingUser.id))
+            .returning()
+        )[0]
+      : (
+          await db
+            .insert(users)
+            .values({
+              telegramUserId: parsedIdentity.telegramUserId,
+              telegramUsername: parsedIdentity.telegramUsername,
+              displayName: parsedIdentity.displayName,
+              role: bootstrapRole,
+            })
+            .returning()
+        )[0];
 
     const accessToken = await jwt.sign({ sub: user.id });
+
+    await db.insert(auditLogs).values({
+      actorUserId: user.id,
+      entityType: "user",
+      entityId: user.id,
+      action: "auth.telegram_login",
+      payloadJson: {
+        telegram_user_id: parsedIdentity.telegramUserId,
+      },
+    });
 
     return {
       access_token: accessToken,
@@ -136,6 +225,7 @@ export class AuthService {
       await db
         .update(walletBindings)
         .set({
+          status: "pending",
           verificationMessage: input.signed_message,
           updatedAt: new Date(),
         })
@@ -144,9 +234,20 @@ export class AuthService {
       await db.insert(walletBindings).values({
         userId: currentUser.id,
         walletAddress: input.wallet_address,
+        status: "pending",
         verificationMessage: input.signed_message,
       });
     }
+
+    await db.insert(auditLogs).values({
+      actorUserId: currentUser.id,
+      entityType: "wallet_binding",
+      entityId: input.wallet_address,
+      action: "wallet_binding.requested",
+      payloadJson: {
+        wallet_address: input.wallet_address,
+      },
+    });
 
     return {
       success: true,

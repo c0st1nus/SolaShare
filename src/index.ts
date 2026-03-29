@@ -1,7 +1,9 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
+import { startRelayWorkers } from "./lib/queue";
 
+await startRelayWorkers();
 app.listen(env.PORT);
 
 logger.info(

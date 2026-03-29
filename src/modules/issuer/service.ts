@@ -7,9 +7,11 @@ import {
   assetStatusHistory,
   assets,
   auditLogs,
+  revenueEpochs,
   verificationRequests,
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
+import { toMoneyString } from "../shared/utils";
 import type {
   issuerAssetBodySchema,
   issuerAssetDocumentBodySchema,
@@ -48,7 +50,7 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 
-const assertEditableDraft = async (assetId: string, issuerUserId: string) => {
+const getOwnedAsset = async (assetId: string, issuerUserId: string) => {
   const [asset] = await db
     .select()
     .from(assets)
@@ -58,6 +60,12 @@ const assertEditableDraft = async (assetId: string, issuerUserId: string) => {
   if (!asset) {
     throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
   }
+
+  return asset;
+};
+
+const assertEditableDraft = async (assetId: string, issuerUserId: string) => {
+  const asset = await getOwnedAsset(assetId, issuerUserId);
 
   if (asset.status !== "draft") {
     throw new ApiError(
@@ -186,6 +194,7 @@ export class IssuerService {
         storageUri: input.storage_uri,
         contentHash: input.content_hash,
         uploadedByUserId: currentUser.id,
+        isPublic: input.is_public,
       });
 
       await tx.insert(auditLogs).values({
@@ -261,7 +270,7 @@ export class IssuerService {
     currentUser: IssuerActor,
     assetId: string,
   ): Promise<IssuerSubmitResponse> {
-    const asset = await assertEditableDraft(assetId, currentUser.id);
+    const asset = await getOwnedAsset(assetId, currentUser.id);
     const [saleTerms] = await db
       .select()
       .from(assetSaleTerms)
@@ -281,11 +290,26 @@ export class IssuerService {
       throw new ApiError(409, "ASSET_DOCUMENT_REQUIRED", "At least one asset document is required");
     }
 
+    const nextStatus =
+      asset.status === "draft"
+        ? "pending_review"
+        : asset.status === "verified"
+          ? "active_sale"
+          : null;
+
+    if (!nextStatus) {
+      throw new ApiError(
+        409,
+        "INVALID_ASSET_STATE",
+        "Asset can only be submitted from draft or verified state",
+      );
+    }
+
     await db.transaction(async (tx) => {
       await tx
         .update(assets)
         .set({
-          status: "pending_review",
+          status: nextStatus,
           updatedAt: new Date(),
         })
         .where(eq(assets.id, assetId));
@@ -293,28 +317,44 @@ export class IssuerService {
       await tx.insert(assetStatusHistory).values({
         assetId,
         oldStatus: asset.status,
-        newStatus: "pending_review",
+        newStatus: nextStatus,
         changedByUserId: currentUser.id,
-        reason: "Issuer submitted asset for review",
+        reason:
+          nextStatus === "pending_review"
+            ? "Issuer submitted asset for review"
+            : "Issuer activated verified asset sale",
       });
 
-      await tx.insert(verificationRequests).values({
-        assetId,
-        requestedByUserId: currentUser.id,
-        requestType: "asset_review",
-        payloadJson: {
-          asset_id: assetId,
-        },
-      });
+      if (nextStatus === "pending_review") {
+        await tx.insert(verificationRequests).values({
+          assetId,
+          requestedByUserId: currentUser.id,
+          requestType: "asset_review",
+          payloadJson: {
+            asset_id: assetId,
+          },
+        });
+      }
+
+      if (nextStatus === "active_sale") {
+        await tx
+          .update(assetSaleTerms)
+          .set({
+            saleStatus: "live",
+            updatedAt: new Date(),
+          })
+          .where(eq(assetSaleTerms.assetId, assetId));
+      }
 
       await tx.insert(auditLogs).values({
         actorUserId: currentUser.id,
         entityType: "asset",
         entityId: assetId,
-        action: "asset.submitted_for_review",
+        action:
+          nextStatus === "pending_review" ? "asset.submitted_for_review" : "asset.sale_activated",
         payloadJson: {
           previous_status: asset.status,
-          next_status: "pending_review",
+          next_status: nextStatus,
         },
       });
     });
@@ -322,26 +362,119 @@ export class IssuerService {
     return {
       success: true,
       message: "Asset submission accepted for the next workflow step",
-      next_status: "pending_review",
+      next_status: nextStatus,
     };
   }
 
-  createRevenueEpoch(_assetId: string, _input: RevenueEpochBody): RevenueEpochResponse {
+  async createRevenueEpoch(
+    currentUser: IssuerActor,
+    assetId: string,
+    input: RevenueEpochBody,
+  ): Promise<RevenueEpochResponse> {
+    const asset = await getOwnedAsset(assetId, currentUser.id);
+
+    if (asset.status !== "active_sale" && asset.status !== "funded") {
+      throw new ApiError(
+        409,
+        "INVALID_ASSET_STATE",
+        "Revenue epochs can only be created for active sale or funded assets",
+      );
+    }
+
+    if (input.period_end < input.period_start) {
+      throw new ApiError(422, "INVALID_PERIOD", "period_end must not be earlier than period_start");
+    }
+
+    const [existingEpoch] = await db
+      .select({ id: revenueEpochs.id })
+      .from(revenueEpochs)
+      .where(
+        and(eq(revenueEpochs.assetId, assetId), eq(revenueEpochs.epochNumber, input.epoch_number)),
+      )
+      .limit(1);
+
+    if (existingEpoch) {
+      throw new ApiError(
+        409,
+        "REVENUE_EPOCH_EXISTS",
+        "Revenue epoch already exists for this asset",
+      );
+    }
+
+    const [epoch] = await db
+      .insert(revenueEpochs)
+      .values({
+        assetId,
+        epochNumber: input.epoch_number,
+        periodStart: input.period_start,
+        periodEnd: input.period_end,
+        grossRevenueUsdc: toMoneyString(input.gross_revenue_usdc),
+        netRevenueUsdc: toMoneyString(input.net_revenue_usdc),
+        distributableRevenueUsdc: toMoneyString(input.distributable_revenue_usdc),
+        reportUri: input.report_uri,
+        reportHash: input.report_hash,
+        sourceType: input.source_type,
+        postedByUserId: currentUser.id,
+        status: "draft",
+      })
+      .returning({ id: revenueEpochs.id });
+
+    await db.insert(auditLogs).values({
+      actorUserId: currentUser.id,
+      entityType: "revenue_epoch",
+      entityId: epoch.id,
+      action: "revenue_epoch.draft_created",
+      payloadJson: {
+        asset_id: assetId,
+        epoch_number: input.epoch_number,
+      },
+    });
+
     return {
       success: true,
-      revenue_epoch_id: "88888888-8888-4888-8888-888888888888",
+      revenue_epoch_id: epoch.id,
     };
   }
 
-  prepareRevenuePosting(assetId: string, epochId: string): RevenuePostResponse {
+  async prepareRevenuePosting(
+    currentUser: IssuerActor,
+    assetId: string,
+    epochId: string,
+  ): Promise<RevenuePostResponse> {
+    await getOwnedAsset(assetId, currentUser.id);
+    const [revenueEpoch] = await db
+      .select()
+      .from(revenueEpochs)
+      .where(and(eq(revenueEpochs.id, epochId), eq(revenueEpochs.assetId, assetId)))
+      .limit(1);
+
+    if (!revenueEpoch) {
+      throw new ApiError(404, "REVENUE_EPOCH_NOT_FOUND", "Revenue epoch not found");
+    }
+
+    if (revenueEpoch.status !== "draft") {
+      throw new ApiError(
+        409,
+        "REVENUE_EPOCH_ALREADY_PREPARED",
+        "Only draft revenue epochs can be prepared for posting",
+      );
+    }
+
+    // TODO @waveofem: Replace this placeholder with the real Solana revenue-posting
+    // orchestration. Expected behavior:
+    // 1. derive the asset, treasury/vault and revenue epoch program accounts,
+    // 2. build the post_revenue instruction with amount/report hash references,
+    // 3. return a signable transaction/message for the issuer wallet,
+    // 4. keep operation_id aligned with revenue_epoch_id for off-chain reconciliation.
     return {
       success: true,
+      operation_id: revenueEpoch.id,
       transaction_payload: {
         kind: "revenue_post",
         asset_id: assetId,
         revenue_epoch_id: epochId,
       },
-      message: "Stub revenue posting payload prepared",
+      message: "Revenue posting operation prepared and waiting for transaction confirmation",
     };
   }
 }

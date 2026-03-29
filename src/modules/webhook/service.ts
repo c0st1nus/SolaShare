@@ -7,17 +7,23 @@ import type { HeliusWebhookPayload } from "./contracts";
 
 export class WebhookService {
   async handleHeliusWebhook(payload: HeliusWebhookPayload) {
-    // Сохраняем webhook в таблицу
     const [webhookRecord] = await db
       .insert(webhookEvents)
       .values({
         source: "helius",
-        eventType: "transfer",
+        eventType: payload.source ?? "transfer",
         externalEventId: payload.signature,
         payloadJson: payload,
         status: "pending",
       })
+      .onConflictDoNothing({
+        target: [webhookEvents.source, webhookEvents.externalEventId],
+      })
       .returning();
+
+    if (!webhookRecord) {
+      return { handled: false, reason: "duplicate_event" };
+    }
 
     try {
       const transfers = payload.events?.transfer;
@@ -30,18 +36,12 @@ export class WebhookService {
       }
 
       for (const transfer of transfers) {
-        // Используем memo для поиска (в HeliusWebhookPayload есть поле memo)
-        // Если memo нет, пробуем использовать signature
         const memo = payload.memo || payload.signature;
-
-        // Ищем инвестицию по transactionSignature
-        const investmentsList = await db
+        const [investment] = await db
           .select()
           .from(investments)
-          .where(eq(investments.transactionSignature, memo))
+          .where(eq(investments.id, memo))
           .limit(1);
-
-        const investment = investmentsList[0];
 
         if (investment && investment.status === "pending") {
           await relayQueue.add("confirm-investment", {
@@ -59,8 +59,8 @@ export class WebhookService {
           );
         } else {
           logger.debug(
-            { memo, status: investment?.status },
-            "No pending investment found for memo",
+            { memo, status: investment?.status, signature: payload.signature },
+            "No pending investment found for webhook memo",
           );
         }
       }

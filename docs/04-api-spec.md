@@ -23,7 +23,9 @@ Primary responsibilities:
 - portfolio delivery
 - admin controls
 
-During the scaffold phase, handlers may return stub responses while contracts and module boundaries are stabilized.
+The backend now persists real workflow state in PostgreSQL. The remaining intentional stub layer is
+Solana transaction building and wallet signature verification, which are left in code as
+`TODO @waveofem` integration points.
 
 Frontend integration note:
 
@@ -36,14 +38,14 @@ Frontend integration note:
 
 ## Current API Status
 
-At the current scaffold stage:
+Current backend status:
 
-- route structure is already defined
+- route structure is implemented
 - request and response contracts are stabilized with Zod/OpenAPI
-- many handlers still return stub data
-- auth and role checks below describe target API behavior
-
-This means frontend can safely build screens and flows now, while backend internals continue to be implemented behind the same contracts.
+- issuer, admin, investment, revenue, claim and portfolio flows persist workflow state in PostgreSQL
+- `operation_id` is returned from preparation endpoints and must be sent back to `POST /transactions/confirm`
+- auth and role checks below are enforced by the backend
+- Solana-specific signing payload assembly remains intentionally deferred
 
 ---
 
@@ -304,7 +306,9 @@ Access:
 ### Frontend notes
 
 - wallet signing UX happens client-side before this call
-- backend treats this as wallet binding confirmation
+- this endpoint stores or refreshes a pending wallet binding request
+- finalize the binding with `POST /transactions/confirm` using `kind: "wallet_link"`
+- cryptographic wallet signature verification is still a dedicated `TODO @waveofem`
 
 ---
 
@@ -595,7 +599,8 @@ Access:
   "title": "Technical passport",
   "storage_provider": "arweave",
   "storage_uri": "https://...",
-  "content_hash": "hash"
+  "content_hash": "hash",
+  "is_public": true
 }
 ```
 
@@ -722,12 +727,13 @@ May return:
 ```json
 {
   "success": true,
+  "operation_id": "revenue-epoch-uuid",
   "transaction_payload": {
     "kind": "revenue_post",
     "asset_id": "asset-uuid",
     "revenue_epoch_id": "epoch-uuid"
   },
-  "message": "Stub revenue posting payload prepared"
+  "message": "Revenue posting operation prepared and waiting for transaction confirmation"
 }
 ```
 
@@ -852,6 +858,7 @@ Access:
 ```json
 {
   "success": true,
+  "operation_id": "investment-operation-uuid",
   "signing_payload": {
     "kind": "investment",
     "asset_id": "asset-1",
@@ -885,6 +892,7 @@ Access:
 ```json
 {
   "success": true,
+  "operation_id": "claim-operation-uuid",
   "signing_payload": {
     "kind": "claim",
     "asset_id": "asset-1",
@@ -909,7 +917,8 @@ Access:
 ```json
 {
   "transaction_signature": "signature",
-  "kind": "investment"
+  "kind": "investment",
+  "operation_id": "investment-operation-uuid"
 }
 ```
 
@@ -918,9 +927,15 @@ Access:
 ```json
 {
   "success": true,
-  "sync_status": "queued"
+  "sync_status": "confirmed"
 }
 ```
+
+### Transaction confirmation notes
+
+- `operation_id` is required for `investment`, `claim`, and `revenue_post`
+- `wallet_link` confirms the latest pending wallet binding for the authenticated user
+- confirmation updates PostgreSQL projections immediately; on-chain settlement confirmation can be layered on top later
 
 ---
 
@@ -1043,6 +1058,7 @@ Access:
 3. frontend stores `access_token`
 4. frontend branches UI using `user.role`
 5. optional wallet flow calls `POST /auth/wallet/link`
+6. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
 
 ### Public Asset Discovery Flow
 
@@ -1056,18 +1072,20 @@ Access:
 1. frontend calls `POST /investments/quote`
 2. frontend shows quote confirmation
 3. frontend calls `POST /investments/prepare`
-4. wallet signing happens client-side
-5. frontend calls `POST /transactions/confirm`
-6. frontend refreshes `GET /me/portfolio`
+4. frontend stores returned `operation_id`
+5. wallet signing happens client-side
+6. frontend calls `POST /transactions/confirm`
+7. frontend refreshes `GET /me/portfolio`
 
 ### Claim Flow
 
 1. frontend loads `GET /me/portfolio` and `GET /me/claims`
 2. user selects a claimable revenue epoch
 3. frontend calls `POST /claims/prepare`
-4. wallet signing happens client-side
-5. frontend calls `POST /transactions/confirm`
-6. frontend refreshes portfolio and claim history
+4. frontend stores returned `operation_id`
+5. wallet signing happens client-side
+6. frontend calls `POST /transactions/confirm`
+7. frontend refreshes portfolio and claim history
 
 ### Issuer Asset Draft Flow
 
