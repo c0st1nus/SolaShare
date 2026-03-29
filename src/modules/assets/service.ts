@@ -12,7 +12,7 @@ import {
   users,
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
-import { clampPercent, roundMoney, toNumber } from "../shared/utils";
+import { roundMoney, toNumber } from "../shared/utils";
 import type {
   assetDetailSchema,
   assetDocumentsResponseSchema,
@@ -21,6 +21,7 @@ import type {
   assetsListResponseSchema,
   assetsQuerySchema,
 } from "./contracts";
+import { calculateFundedPercent } from "./domain";
 
 type AssetsQuery = z.infer<typeof assetsQuerySchema>;
 type AssetsListResponse = z.infer<typeof assetsListResponseSchema>;
@@ -267,10 +268,10 @@ export class AssetsService {
     ]);
 
     const targetRaiseUsdc = toNumber(saleTerms[0]?.targetRaiseUsdc);
-    const fundedPercent =
-      targetRaiseUsdc > 0
-        ? clampPercent((toNumber(confirmedInvestmentsAggregate[0]?.total) / targetRaiseUsdc) * 100)
-        : 0;
+    const fundedPercent = calculateFundedPercent(
+      targetRaiseUsdc,
+      toNumber(confirmedInvestmentsAggregate[0]?.total),
+    );
 
     return {
       total_investors: investorsAggregate[0]?.total ?? 0,

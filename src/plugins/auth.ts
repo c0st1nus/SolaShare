@@ -5,20 +5,7 @@ import { env } from "../config/env";
 import { db } from "../db";
 import { type User, users } from "../db/schema";
 import { ApiError } from "../lib/api-error";
-
-const getBearerToken = (authorizationHeader?: string) => {
-  if (!authorizationHeader) {
-    return null;
-  }
-
-  const [scheme, token] = authorizationHeader.split(" ");
-
-  if (scheme !== "Bearer" || !token) {
-    return null;
-  }
-
-  return token;
-};
+import { getBearerToken } from "../modules/auth/utils";
 
 export const authPlugin = (app: Elysia) =>
   app

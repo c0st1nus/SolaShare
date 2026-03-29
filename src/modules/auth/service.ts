@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { env } from "../../config/env";
@@ -11,6 +10,7 @@ import type {
   walletLinkBodySchema,
   walletLinkResponseSchema,
 } from "./contracts";
+import { getBootstrapRole, parseTelegramInitData, validateTelegramInitData } from "./utils";
 
 type TelegramAuthBody = z.infer<typeof telegramAuthBodySchema>;
 type TelegramAuthResponse = z.infer<typeof telegramAuthResponseSchema>;
@@ -25,120 +25,24 @@ type AuthenticatedUser = {
   id: string;
 };
 
-const bootstrapRoleMap = {
-  admin: new Set(
-    (env.ADMIN_TELEGRAM_IDS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  ),
-  issuer: new Set(
-    (env.ISSUER_TELEGRAM_IDS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  ),
-};
-
-const getBootstrapRole = (telegramUserId: string) => {
-  if (bootstrapRoleMap.admin.has(telegramUserId)) {
-    return "admin" as const;
-  }
-
-  if (bootstrapRoleMap.issuer.has(telegramUserId)) {
-    return "issuer" as const;
-  }
-
-  return "investor" as const;
-};
-
-const validateTelegramInitData = (telegramInitData: string) => {
-  const params = new URLSearchParams(telegramInitData);
-  const hash = params.get("hash");
-
-  if (!hash) {
-    return;
-  }
-
-  if (!env.TELEGRAM_BOT_TOKEN) {
-    throw new ApiError(
-      500,
-      "TELEGRAM_BOT_TOKEN_REQUIRED",
-      "TELEGRAM_BOT_TOKEN must be configured to validate signed Telegram init data",
-    );
-  }
-
-  params.delete("hash");
-
-  const dataCheckString = [...params.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
-
-  const secretKey = createHmac("sha256", "WebAppData").update(env.TELEGRAM_BOT_TOKEN).digest();
-  const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
-
-  if (computedHash !== hash) {
-    throw new ApiError(
-      401,
-      "INVALID_TELEGRAM_SIGNATURE",
-      "Telegram init data signature is invalid",
-    );
-  }
-};
-
-const parseTelegramInitData = (telegramInitData: string) => {
-  const params = new URLSearchParams(telegramInitData);
-  const rawUser = params.get("user");
-
-  if (rawUser) {
-    try {
-      const parsedUser = JSON.parse(rawUser) as {
-        id?: number | string;
-        username?: string;
-        first_name?: string;
-        last_name?: string;
-      };
-
-      const displayName = [parsedUser.first_name, parsedUser.last_name]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-
-      return {
-        telegramUserId: parsedUser.id ? String(parsedUser.id) : telegramInitData,
-        telegramUsername: parsedUser.username ?? null,
-        displayName:
-          displayName ||
-          parsedUser.username ||
-          `Telegram User ${String(parsedUser.id ?? "").slice(-6)}`,
-      };
-    } catch {
-      // Fall through to a simpler parser below.
-    }
-  }
-
-  const telegramUserId = params.get("id") ?? telegramInitData;
-  const telegramUsername = params.get("username");
-  const displayName =
-    params.get("display_name") ?? telegramUsername ?? `Telegram User ${telegramUserId.slice(-6)}`;
-
-  return {
-    telegramUserId,
-    telegramUsername,
-    displayName,
-  };
-};
-
 export class AuthService {
   async authenticateWithTelegram(
     input: TelegramAuthBody,
     jwt: JwtSigner,
   ): Promise<TelegramAuthResponse> {
-    validateTelegramInitData(input.telegram_init_data);
+    validateTelegramInitData(input.telegram_init_data, env.TELEGRAM_BOT_TOKEN);
 
     const parsedIdentity = parseTelegramInitData(input.telegram_init_data);
-    const bootstrapRole = getBootstrapRole(parsedIdentity.telegramUserId);
+    const bootstrapRole = getBootstrapRole(parsedIdentity.telegramUserId, {
+      adminTelegramIds: (env.ADMIN_TELEGRAM_IDS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      issuerTelegramIds: (env.ISSUER_TELEGRAM_IDS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    });
     const [existingUser] = await db
       .select()
       .from(users)

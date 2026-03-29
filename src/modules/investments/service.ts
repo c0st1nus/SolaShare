@@ -3,12 +3,13 @@ import type { z } from "zod";
 import { db } from "../../db";
 import { assetSaleTerms, assets, investments, walletBindings } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
-import { roundMoney, toMoneyString, toNumber, toShareAmountString } from "../shared/utils";
+import { toMoneyString, toNumber, toShareAmountString } from "../shared/utils";
 import type {
   investmentPrepareResponseSchema,
   investmentQuoteBodySchema,
   investmentQuoteResponseSchema,
 } from "./contracts";
+import { calculateRemainingShares, calculateSharesToReceive } from "./domain";
 
 type InvestmentQuoteBody = z.infer<typeof investmentQuoteBodySchema>;
 type InvestmentQuoteResponse = z.infer<typeof investmentQuoteResponseSchema>;
@@ -59,7 +60,10 @@ export class InvestmentsService {
       );
     }
 
-    const sharesToReceive = roundMoney(input.amount_usdc / toNumber(saleTerms.pricePerShareUsdc));
+    const sharesToReceive = calculateSharesToReceive(
+      input.amount_usdc,
+      toNumber(saleTerms.pricePerShareUsdc),
+    );
     const [reservedSharesAggregate] = await db
       .select({
         total: sql<string>`coalesce(sum(${investments.sharesReceived}), 0)`,
@@ -67,7 +71,10 @@ export class InvestmentsService {
       .from(investments)
       .where(and(eq(investments.assetId, input.asset_id), ne(investments.status, "failed")));
 
-    const remainingShares = saleTerms.totalShares - toNumber(reservedSharesAggregate?.total);
+    const remainingShares = calculateRemainingShares(
+      saleTerms.totalShares,
+      toNumber(reservedSharesAggregate?.total),
+    );
 
     if (sharesToReceive > remainingShares + Number.EPSILON) {
       throw new ApiError(409, "SALE_CAP_EXCEEDED", "Not enough shares remain in this sale");

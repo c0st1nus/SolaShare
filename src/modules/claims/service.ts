@@ -3,8 +3,9 @@ import type { z } from "zod";
 import { db } from "../../db";
 import { claims, holdingsSnapshots, revenueEpochs } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
-import { roundMoney, toMoneyString, toNumber } from "../shared/utils";
+import { toMoneyString, toNumber } from "../shared/utils";
 import type { claimPrepareBodySchema, claimPrepareResponseSchema } from "./contracts";
+import { calculateClaimableAmount, isRevenueClaimableStatus } from "./domain";
 
 type ClaimPrepareBody = z.infer<typeof claimPrepareBodySchema>;
 type ClaimPrepareResponse = z.infer<typeof claimPrepareResponseSchema>;
@@ -75,15 +76,16 @@ export class ClaimsService {
       throw new ApiError(409, "HOLDINGS_NOT_FOUND", "No holdings found for this asset");
     }
 
-    if (!revenueEpoch || (revenueEpoch.status !== "posted" && revenueEpoch.status !== "settled")) {
+    if (!revenueEpoch || !isRevenueClaimableStatus(revenueEpoch.status)) {
       throw new ApiError(409, "REVENUE_NOT_CLAIMABLE", "Revenue epoch is not claimable");
     }
 
-    const entitlement = roundMoney(
-      toNumber(revenueEpoch.distributableRevenueUsdc) * toNumber(holding.sharesPercentage),
-    );
     const alreadyClaimed = toNumber(confirmedClaimsAggregate[0]?.total);
-    const claimableAmount = roundMoney(entitlement - alreadyClaimed);
+    const claimableAmount = calculateClaimableAmount(
+      toNumber(revenueEpoch.distributableRevenueUsdc),
+      toNumber(holding.sharesPercentage),
+      alreadyClaimed,
+    );
 
     if (claimableAmount <= 0) {
       throw new ApiError(409, "NOTHING_TO_CLAIM", "There is no remaining claimable balance");
