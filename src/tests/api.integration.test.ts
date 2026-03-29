@@ -5,6 +5,7 @@ import {
   apiRequest,
   createAccessToken,
   createActiveWalletBinding,
+  createSignedTelegramInitData,
   createUser,
   resetTestState,
 } from "./helpers";
@@ -19,7 +20,10 @@ describe("api integration", () => {
       method: "POST",
       path: "/api/v1/auth/telegram",
       body: {
-        telegram_init_data: "id=api-auth&display_name=API%20Auth",
+        telegram_init_data: createSignedTelegramInitData({
+          id: "api-auth",
+          display_name: "API Auth",
+        }),
       },
     });
 

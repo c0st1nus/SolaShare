@@ -223,7 +223,11 @@ export class SettlementService {
     }
 
     if (currentInvestment.status !== "pending") {
-      throw new ApiError(409, "INVALID_INVESTMENT_STATE", "Only pending investments can be confirmed");
+      throw new ApiError(
+        409,
+        "INVALID_INVESTMENT_STATE",
+        "Only pending investments can be confirmed",
+      );
     }
 
     const [currentSaleTerms] = await db

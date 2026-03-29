@@ -50,6 +50,28 @@ export const createAccessToken = (userId: string) => {
   return `${header}.${payload}.${signature}`;
 };
 
+export const createSignedTelegramInitData = (payload: Record<string, string>) => {
+  const telegramBotToken = env.TELEGRAM_BOT_TOKEN ?? "test-telegram-bot-token";
+
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    Object.assign(env, {
+      TELEGRAM_BOT_TOKEN: telegramBotToken,
+    });
+  }
+
+  const params = new URLSearchParams(payload);
+  const dataCheckString = [...params.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secretKey = createHmac("sha256", "WebAppData").update(telegramBotToken).digest();
+  const hash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+  params.set("hash", hash);
+
+  return params.toString();
+};
+
 export const createUser = async (overrides: Partial<NewUser> = {}) => {
   const [user] = await db
     .insert(users)
