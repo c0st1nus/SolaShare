@@ -19,16 +19,12 @@ export const notificationsRoutes = new Elysia({ prefix: "/notifications" })
       const { token } = ws.data.query;
       const payload = await ws.data.jwt.verify(token);
 
-      if (!payload || !payload.sub) {
+      if (!payload || typeof payload !== "object" || !("sub" in payload) || !payload.sub) {
         ws.close(4001, "Unauthorized");
         return;
       }
 
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, payload.sub as string))
-        .limit(1);
+      const [user] = await db.select().from(users).where(eq(users.id, payload.sub)).limit(1);
 
       if (!user || user.status !== "active") {
         ws.close(4003, "Forbidden");

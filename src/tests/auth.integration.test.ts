@@ -4,7 +4,7 @@ import { db } from "../db";
 import { auditLogs, users, walletBindings } from "../db/schema";
 import { ApiError } from "../lib/api-error";
 import { authService } from "../modules/auth/service";
-import { resetTestState } from "./helpers";
+import { createSignedTelegramInitData, resetTestState } from "./helpers";
 
 describe("auth integration", () => {
   beforeEach(async () => {
@@ -14,7 +14,11 @@ describe("auth integration", () => {
   it("creates a user on telegram auth and returns an access token", async () => {
     const response = await authService.authenticateWithTelegram(
       {
-        telegram_init_data: "id=telegram-1&username=tester&display_name=Test%20User",
+        telegram_init_data: createSignedTelegramInitData({
+          id: "telegram-1",
+          username: "tester",
+          display_name: "Test User",
+        }),
       },
       {
         sign: async ({ sub }) => `signed:${sub}`,
@@ -44,7 +48,11 @@ describe("auth integration", () => {
 
     const response = await authService.authenticateWithTelegram(
       {
-        telegram_init_data: "id=telegram-2&username=newhandle&display_name=New%20Name",
+        telegram_init_data: createSignedTelegramInitData({
+          id: "telegram-2",
+          username: "newhandle",
+          display_name: "New Name",
+        }),
       },
       {
         sign: async () => "token",
@@ -156,7 +164,10 @@ describe("auth integration", () => {
   it("writes auth and wallet audit logs", async () => {
     const response = await authService.authenticateWithTelegram(
       {
-        telegram_init_data: "id=telegram-audit&display_name=Audit%20User",
+        telegram_init_data: createSignedTelegramInitData({
+          id: "telegram-audit",
+          display_name: "Audit User",
+        }),
       },
       {
         sign: async () => "token",

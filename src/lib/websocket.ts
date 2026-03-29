@@ -23,7 +23,13 @@ class WebSocketServer {
     if (!this.userConnections.has(userId)) {
       this.userConnections.set(userId, new Set());
     }
-    this.userConnections.get(userId)!.add(connectionId);
+    const connections = this.userConnections.get(userId);
+
+    if (!connections) {
+      return;
+    }
+
+    connections.add(connectionId);
   }
 
   removeClient(connectionId: string, userId: string) {

@@ -107,6 +107,29 @@ export class InvestmentsService {
     }
 
     const investment = await db.transaction(async (tx) => {
+      const [lockedInvestableAsset] = await tx
+        .select({
+          asset: assets,
+          saleTerms: assetSaleTerms,
+        })
+        .from(assets)
+        .innerJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
+        .where(eq(assets.id, input.asset_id))
+        .limit(1)
+        .for("update");
+
+      if (!lockedInvestableAsset) {
+        throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
+      }
+
+      if (lockedInvestableAsset.asset.status !== "active_sale") {
+        throw new ApiError(409, "ASSET_NOT_INVESTABLE", "Asset is not open for investment");
+      }
+
+      if (lockedInvestableAsset.saleTerms.saleStatus !== "live") {
+        throw new ApiError(409, "SALE_NOT_LIVE", "Sale is not live");
+      }
+
       const [existingPendingInvestment] = await tx
         .select()
         .from(investments)
@@ -125,20 +148,18 @@ export class InvestmentsService {
         return existingPendingInvestment;
       }
 
-      const [{ saleTerms }, reservedSharesAggregate] = await Promise.all([
-        getInvestableAsset(input.asset_id),
+      const [reservedSharesAggregate] = await Promise.all([
         tx
           .select({
             total: sql<string>`coalesce(sum(${investments.sharesReceived}), 0)`,
           })
           .from(investments)
           .where(and(eq(investments.assetId, input.asset_id), ne(investments.status, "failed")))
-          .for("update")
           .then((rows) => rows[0]),
       ]);
 
       const remainingShares = calculateRemainingShares(
-        saleTerms.totalShares,
+        lockedInvestableAsset.saleTerms.totalShares,
         toNumber(reservedSharesAggregate?.total),
       );
 
