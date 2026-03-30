@@ -1,9 +1,17 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { app } from "../app";
 import { env } from "../config/env";
 import { client, db } from "../db";
-import { assetSaleTerms, assets, type NewUser, users, walletBindings } from "../db/schema";
+import {
+  assetSaleTerms,
+  assets,
+  authIdentities,
+  type NewUser,
+  passwordCredentials,
+  users,
+  walletBindings,
+} from "../db/schema";
 import { redis } from "../lib/redis";
 import { adminService } from "../modules/admin/service";
 import { issuerService } from "../modules/issuer/service";
@@ -15,6 +23,8 @@ export const resetTestState = async () => {
       wallet_bindings,
       verification_decisions,
       verification_requests,
+      password_credentials,
+      auth_identities,
       user_sessions,
       transfers_index,
       share_mints,
@@ -72,6 +82,59 @@ export const createSignedTelegramInitData = (payload: Record<string, string>) =>
   return params.toString();
 };
 
+export const createSignedTelegramLoginPayload = (payload: {
+  id: string;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date?: string;
+}) => {
+  const telegramBotToken = env.TELEGRAM_BOT_TOKEN ?? "test-telegram-bot-token";
+
+  if (!env.TELEGRAM_BOT_TOKEN) {
+    Object.assign(env, {
+      TELEGRAM_BOT_TOKEN: telegramBotToken,
+    });
+  }
+
+  const authDate = payload.auth_date ?? "1710000000";
+  const params = new URLSearchParams({
+    auth_date: authDate,
+    first_name: payload.first_name,
+    id: payload.id,
+  });
+
+  if (payload.last_name) {
+    params.set("last_name", payload.last_name);
+  }
+
+  if (payload.photo_url) {
+    params.set("photo_url", payload.photo_url);
+  }
+
+  if (payload.username) {
+    params.set("username", payload.username);
+  }
+
+  const dataCheckString = [...params.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secretKey = createHash("sha256").update(telegramBotToken).digest();
+  const hash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+  return {
+    id: payload.id,
+    first_name: payload.first_name,
+    last_name: payload.last_name,
+    username: payload.username,
+    photo_url: payload.photo_url,
+    auth_date: authDate,
+    hash,
+  };
+};
+
 export const createUser = async (overrides: Partial<NewUser> = {}) => {
   const [user] = await db
     .insert(users)
@@ -104,6 +167,48 @@ export const createActiveWalletBinding = async (
     .returning();
 
   return binding;
+};
+
+export const createPasswordUser = async ({
+  email,
+  password = "Password123!",
+  displayName = "Password User",
+  role = "investor",
+}: {
+  email: string;
+  password?: string;
+  displayName?: string;
+  role?: "investor" | "issuer" | "admin";
+}) => {
+  const [user] = await db
+    .insert(users)
+    .values({
+      displayName,
+      role,
+    })
+    .returning();
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const passwordHash = await Bun.password.hash(password, {
+    algorithm: "argon2id",
+  });
+
+  await db.insert(authIdentities).values({
+    userId: user.id,
+    provider: "password",
+    providerUserId: normalizedEmail,
+    email: normalizedEmail,
+    profileJson: {
+      email: normalizedEmail,
+    },
+  });
+
+  await db.insert(passwordCredentials).values({
+    userId: user.id,
+    passwordHash,
+  });
+
+  return user;
 };
 
 export const createAssetDraftFixture = async (

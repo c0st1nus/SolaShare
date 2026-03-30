@@ -1,5 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
+import { env } from "./config/env";
 import { ApiError } from "./lib/api-error";
 import { logger } from "./lib/logger";
 import { adminRoutes } from "./modules/admin/routes";
@@ -28,8 +29,27 @@ const api = new Elysia({ prefix: "/api/v1" })
   .use(webhookRoutes)
   .use(adminRoutes);
 
+const defaultAllowedOrigins = new Set([
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+  "https://localhost:3001",
+  "https://127.0.0.1:3001",
+]);
+
+for (const origin of (env.CORS_ORIGINS ?? "").split(",")) {
+  const normalizedOrigin = origin.trim();
+
+  if (normalizedOrigin) {
+    defaultAllowedOrigins.add(normalizedOrigin);
+  }
+}
+
 export const app = new Elysia()
-  .use(cors())
+  .use(
+    cors({
+      origin: [...defaultAllowedOrigins],
+    }),
+  )
   .use(openApiPlugin)
   .get("/", () => ({
     service: "solashare-api",

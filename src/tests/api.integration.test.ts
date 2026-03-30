@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import { env } from "../config/env";
 import { db } from "../db";
-import { walletBindings } from "../db/schema";
+import { userSessions, walletBindings } from "../db/schema";
 import {
   apiRequest,
   createAccessToken,
   createActiveWalletBinding,
+  createPasswordUser,
   createSignedTelegramInitData,
+  createSignedTelegramLoginPayload,
   createUser,
   resetTestState,
 } from "./helpers";
@@ -15,7 +18,101 @@ describe("api integration", () => {
     await resetTestState();
   });
 
-  it("authenticates via telegram endpoint", async () => {
+  it("registers via password endpoint", async () => {
+    const { response, json } = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/register",
+      body: {
+        email: "api-register@example.com",
+        password: "Password123!",
+        display_name: "API Register",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(typeof json?.access_token).toBe("string");
+    expect(typeof json?.refresh_token).toBe("string");
+  });
+
+  it("logs in via password endpoint", async () => {
+    await createPasswordUser({
+      email: "api-login@example.com",
+      password: "Password123!",
+      displayName: "API Login",
+    });
+
+    const { response, json } = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/login",
+      body: {
+        email: "api-login@example.com",
+        password: "Password123!",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(typeof json?.access_token).toBe("string");
+  });
+
+  it("refreshes and revokes refresh sessions over HTTP", async () => {
+    const registerResult = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/register",
+      body: {
+        email: "api-refresh@example.com",
+        password: "Password123!",
+        display_name: "API Refresh",
+      },
+    });
+    const refreshToken = String(registerResult.json?.refresh_token);
+
+    const refreshResult = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/refresh",
+      body: {
+        refresh_token: refreshToken,
+      },
+    });
+
+    expect(refreshResult.response.status).toBe(200);
+    expect(String(refreshResult.json?.refresh_token)).not.toBe(refreshToken);
+
+    const logoutResult = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/logout",
+      body: {
+        refresh_token: String(refreshResult.json?.refresh_token),
+      },
+    });
+
+    expect(logoutResult.response.status).toBe(200);
+
+    const sessions = await db.select().from(userSessions);
+    expect(sessions.filter((session) => session.revokedAt !== null).length).toBeGreaterThan(0);
+  });
+
+  it("returns the authenticated auth profile", async () => {
+    const registerResult = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/register",
+      body: {
+        email: "api-me@example.com",
+        password: "Password123!",
+        display_name: "API Me",
+      },
+    });
+
+    const { response, json } = await apiRequest({
+      method: "GET",
+      path: "/api/v1/auth/me",
+      token: String(registerResult.json?.access_token),
+    });
+
+    expect(response.status).toBe(200);
+    expect(json?.user).toBeTruthy();
+  });
+
+  it("authenticates via telegram miniapp endpoint", async () => {
     const { response, json } = await apiRequest({
       method: "POST",
       path: "/api/v1/auth/telegram",
@@ -29,6 +126,37 @@ describe("api integration", () => {
 
     expect(response.status).toBe(200);
     expect(typeof json?.access_token).toBe("string");
+  });
+
+  it("authenticates via telegram login widget endpoint", async () => {
+    const { response, json } = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/telegram/login",
+      body: createSignedTelegramLoginPayload({
+        id: "api-widget",
+        first_name: "API",
+        last_name: "Widget",
+        username: "apiwidget",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(typeof json?.access_token).toBe("string");
+  });
+
+  it("returns a google authorization url when configured", async () => {
+    Object.assign(env, {
+      GOOGLE_CLIENT_ID: "google-client-id",
+      GOOGLE_OAUTH_REDIRECT_URI: "https://web.solashare.test/auth/google/callback",
+    });
+
+    const { response, json } = await apiRequest({
+      method: "GET",
+      path: "/api/v1/auth/google/url",
+    });
+
+    expect(response.status).toBe(200);
+    expect(String(json?.authorization_url)).toContain("accounts.google.com");
   });
 
   it("rejects protected routes without authentication", async () => {

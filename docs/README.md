@@ -14,6 +14,7 @@ This directory contains the technical documentation for the SolaShare MVP.
 - `08-storage-and-documents.md` — storage architecture for metadata and proof files
 - `09-security-and-operational-risks.md` — key technical and operational risks
 - `10-deployment-and-roadmap.md` — deployment plan and phased roadmap
+- `TODO.md` — active implementation backlog and pending product tasks
 
 ## MVP Goal
 

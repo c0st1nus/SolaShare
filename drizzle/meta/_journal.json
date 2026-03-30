@@ -8,6 +8,13 @@
       "when": 1774637685671,
       "tag": "0000_cynical_the_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774879687278,
+      "tag": "0001_wise_blackheart",
+      "breakpoints": true
     }
   ]
 }

@@ -22,7 +22,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets",
     ({ auth, body }) =>
-      issuerService.createAssetDraft(requireUserRole(auth, ["issuer", "admin"]), body),
+      issuerService.createAssetDraft(requireUserRole(auth, ["investor", "issuer", "admin"]), body),
     {
       body: issuerAssetBodySchema,
       detail: {
@@ -36,7 +36,11 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .patch(
     "/assets/:id",
     ({ auth, params, body }) =>
-      issuerService.updateAssetDraft(requireUserRole(auth, ["issuer", "admin"]), params.id, body),
+      issuerService.updateAssetDraft(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+        body,
+      ),
     {
       params: issuerActionParamsSchema,
       body: issuerAssetUpdateBodySchema,
@@ -52,7 +56,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
     "/assets/:id/documents",
     ({ auth, params, body }) =>
       issuerService.registerAssetDocument(
-        requireUserRole(auth, ["issuer", "admin"]),
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
         params.id,
         body,
       ),
@@ -70,7 +74,11 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets/:id/sale-terms",
     ({ auth, params, body }) =>
-      issuerService.saveSaleTerms(requireUserRole(auth, ["issuer", "admin"]), params.id, body),
+      issuerService.saveSaleTerms(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+        body,
+      ),
     {
       params: issuerActionParamsSchema,
       body: saleTermsBodySchema,
@@ -85,7 +93,10 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets/:id/submit",
     ({ auth, params }) =>
-      issuerService.submitAssetForWorkflow(requireUserRole(auth, ["issuer", "admin"]), params.id),
+      issuerService.submitAssetForWorkflow(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+      ),
     {
       params: issuerActionParamsSchema,
       detail: {
@@ -100,7 +111,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
     "/assets/:id/revenue-epochs",
     ({ auth, params, body }) => {
       return issuerService.createRevenueEpoch(
-        requireUserRole(auth, ["issuer", "admin"]),
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
         params.id,
         body,
       );
@@ -120,7 +131,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
     "/assets/:id/revenue-epochs/:epochId/post",
     ({ auth, params }) => {
       return issuerService.prepareRevenuePosting(
-        requireUserRole(auth, ["issuer", "admin"]),
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
         params.id,
         params.epochId,
       );

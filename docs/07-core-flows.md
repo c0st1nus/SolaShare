@@ -2,17 +2,46 @@
 
 ## Overview
 
-The MVP should be optimized around three end-to-end flows:
+The MVP should be optimized around four end-to-end flows:
 
-1. asset creation
-2. investment
-3. revenue posting and claim
+1. authentication and onboarding
+2. asset creation
+3. investment
+4. revenue posting and claim
 
 These flows are enough to prove:
+- user access and identity continuity
 - tokenization
 - ownership
 - distribution
 - interaction with real-world asset economics
+
+---
+
+## Flow 0: Authentication And Onboarding
+
+### Goal
+Let a user enter the product from either a normal browser or Telegram Mini App without treating wallet binding as the login method.
+
+### Steps
+1. frontend detects whether Telegram Mini App init data is available
+2. if Mini App context exists, frontend prefers Telegram Mini App auth
+3. otherwise the user chooses one of:
+   - email and password registration
+   - email and password login
+   - Google sign-in
+   - Telegram Login Widget
+4. backend validates the identity proof and issues:
+   - access token
+   - refresh token
+   - local user profile with role
+5. frontend optionally binds a wallet after login
+6. frontend enters investor, issuer, or admin shell based on `user.role`
+
+### Output
+- user has an active local session
+- provider identity is linked to a local user
+- wallet binding remains a separate step after login
 
 ---
 
