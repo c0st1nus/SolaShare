@@ -8,7 +8,7 @@ SolaShare is a hybrid blockchain application that combines:
 - an off-chain backend for product logic and UX orchestration
 - a PostgreSQL database for read models and app state
 - document storage for proofs and asset metadata
-- Telegram WebApp as the main consumer frontend
+- a Next.js frontend that supports both normal browser auth and Telegram Mini App bootstrap
 
 ## High-Level Components
 
@@ -25,12 +25,17 @@ Frontend is responsible for:
 Suggested stack:
 - Next.js
 - TypeScript
+- email/password web auth
+- Google OAuth and Telegram sign-in
 - Telegram Mini App integration
 - Solana wallet adapter where needed
 
 ### 2. Backend API
 Backend is responsible for:
-- Telegram authentication
+- email/password authentication
+- Google OAuth exchange
+- Telegram Login Widget validation
+- Telegram Mini App auth validation
 - wallet binding
 - asset CRUD
 - sale term management
@@ -147,8 +152,10 @@ Important actions should have:
 
 ### Auth Service
 Handles:
-- Telegram login
-- session issuing
+- password registration and login
+- Google OAuth exchange
+- Telegram login and Mini App auth
+- access token and refresh session issuing
 - wallet linking
 
 ### Asset Service

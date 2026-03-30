@@ -22,6 +22,7 @@ const shareAmount = (name: string) => numeric(name, { precision: 30, scale: 12 }
 
 export const userRoleEnum = pgEnum("user_role", ["investor", "issuer", "admin"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "blocked"]);
+export const authProviderEnum = pgEnum("auth_provider", ["password", "google", "telegram"]);
 
 export const energyTypeEnum = pgEnum("energy_type", [
   "solar",
@@ -154,6 +155,42 @@ export const users = pgTable(
   ],
 );
 
+export const authIdentities = pgTable(
+  "auth_identities",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: authProviderEnum("provider").notNull(),
+    providerUserId: text("provider_user_id").notNull(),
+    email: text("email"),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    profileJson: jsonb("profile_json"),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex("auth_identities_provider_user_id_unique").on(table.provider, table.providerUserId),
+    index("auth_identities_user_id_idx").on(table.userId),
+    index("auth_identities_provider_idx").on(table.provider),
+    index("auth_identities_email_idx").on(table.email),
+  ],
+);
+
+export const passwordCredentials = pgTable(
+  "password_credentials",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    passwordHash: text("password_hash").notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [index("password_credentials_user_id_idx").on(table.userId)],
+);
+
 export const userSessions = pgTable(
   "user_sessions",
   {
@@ -165,12 +202,15 @@ export const userSessions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     ip: text("ip"),
     userAgent: text("user_agent"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt,
   },
   (table) => [
     uniqueIndex("user_sessions_session_token_hash_unique").on(table.sessionTokenHash),
     index("user_sessions_user_id_idx").on(table.userId),
     index("user_sessions_expires_at_idx").on(table.expiresAt),
+    index("user_sessions_revoked_at_idx").on(table.revokedAt),
   ],
 );
 
@@ -272,7 +312,9 @@ export const verificationRequests = pgTable(
   "verification_requests",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    assetId: uuid("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    assetId: uuid("asset_id").references(() => assets.id, {
+      onDelete: "cascade",
+    }),
     requestedByUserId: uuid("requested_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -396,7 +438,10 @@ export const holdingsSnapshots = pgTable(
       .notNull()
       .references(() => assets.id, { onDelete: "cascade" }),
     sharesAmount: shareAmount("shares_amount").notNull(),
-    sharesPercentage: numeric("shares_percentage", { precision: 9, scale: 6 }).notNull(),
+    sharesPercentage: numeric("shares_percentage", {
+      precision: 9,
+      scale: 6,
+    }).notNull(),
     lastSyncedSlot: bigint("last_synced_slot", { mode: "number" }),
     updatedAt,
   },
@@ -609,7 +654,9 @@ export const auditLogs = pgTable(
   "audit_logs",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    actorUserId: uuid("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
     action: text("action").notNull(),
@@ -634,7 +681,10 @@ export const idempotencyKeys = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (table) => [
-    primaryKey({ columns: [table.scope, table.key], name: "idempotency_keys_pk" }),
+    primaryKey({
+      columns: [table.scope, table.key],
+      name: "idempotency_keys_pk",
+    }),
     index("idempotency_keys_expires_at_idx").on(table.expiresAt),
   ],
 );

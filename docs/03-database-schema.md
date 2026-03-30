@@ -12,6 +12,8 @@ The database does not replace blockchain truth. It acts as:
 - analytics and UX layer
 
 The implemented schema also includes operational support tables required by the backend service:
+- auth identities
+- password credentials
 - wallet bindings
 - verification workflow records
 - share mint tracking
@@ -25,6 +27,8 @@ The implemented schema also includes operational support tables required by the 
 ## Table: users
 
 Stores platform users.
+
+This table stores the local user profile and role. Provider-specific auth data now lives in dedicated auth tables instead of being embedded entirely in `users`.
 
 ### Columns
 - `id UUID PRIMARY KEY`
@@ -50,7 +54,7 @@ Stores platform users.
 
 ## Table: user_sessions
 
-Stores active sessions.
+Stores refresh sessions.
 
 ### Columns
 - `id UUID PRIMARY KEY`
@@ -59,7 +63,58 @@ Stores active sessions.
 - `expires_at TIMESTAMP NOT NULL`
 - `ip TEXT NULL`
 - `user_agent TEXT NULL`
+- `last_used_at TIMESTAMP NULL`
+- `revoked_at TIMESTAMP NULL`
 - `created_at TIMESTAMP NOT NULL`
+
+Notes:
+
+- the backend stores only a hash of the refresh token
+- refresh rotation revokes the previous session row and creates a new one
+
+---
+
+## Table: auth_identities
+
+Stores provider-linked identities that map external auth methods to a local user.
+
+### Columns
+- `id UUID PRIMARY KEY`
+- `user_id UUID NOT NULL REFERENCES users(id)`
+- `provider TEXT NOT NULL`
+- `provider_user_id TEXT NOT NULL`
+- `email TEXT NULL`
+- `email_verified_at TIMESTAMP NULL`
+- `profile_json JSONB NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### Allowed provider values
+- `password`
+- `google`
+- `telegram`
+
+Notes:
+
+- `provider + provider_user_id` is unique
+- `email` is indexed and used for stable linking across providers such as password and Google
+
+---
+
+## Table: password_credentials
+
+Stores password hashes for users who authenticate with email and password.
+
+### Columns
+- `user_id UUID PRIMARY KEY REFERENCES users(id)`
+- `password_hash TEXT NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+Notes:
+
+- plaintext passwords are never stored
+- password hashes are kept separate from the main `users` table to support multi-provider auth cleanly
 
 ---
 
