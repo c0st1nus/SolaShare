@@ -41,6 +41,7 @@ describe("auth utils", () => {
       telegramUserId: "123",
       telegramUsername: "waveofem",
       displayName: "Wave Ofem",
+      photoUrl: null,
     });
   });
 
@@ -51,6 +52,7 @@ describe("auth utils", () => {
       telegramUserId: "42",
       telegramUsername: "demo",
       displayName: "demo",
+      photoUrl: null,
     });
   });
 

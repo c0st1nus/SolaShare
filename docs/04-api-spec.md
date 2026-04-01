@@ -117,9 +117,17 @@ Responses generally follow one of these shapes:
 | Endpoint Group | Access | Notes |
 | --- | --- | --- |
 | `GET /assets*` | Public | public catalog and investor-facing asset data |
-| `POST /auth/telegram` | Public | login entrypoint |
+| `POST /auth/register` | Public | password-based signup |
+| `POST /auth/login` | Public | password-based login |
+| `POST /auth/refresh` | Public | refresh-token rotation |
+| `POST /auth/logout` | Public | refresh-session revocation |
+| `GET /auth/google/url` | Public | build Google OAuth URL |
+| `POST /auth/google` | Public | exchange Google code |
+| `POST /auth/telegram` | Public | Telegram Mini App login entrypoint |
+| `POST /auth/telegram/login` | Public | Telegram Login Widget entrypoint |
+| `GET /auth/me` | Authenticated user | current auth profile |
 | `POST /auth/wallet/link` | Authenticated user | links wallet to current user |
-| `POST /issuer/*` | Authenticated issuer | issuer must own target asset |
+| `POST /issuer/*` | Authenticated user | current user must own target asset |
 | `GET /me/*` | Authenticated user | current user read models |
 | `POST /investments/*` | Authenticated investor | active sale only |
 | `POST /claims/prepare` | Authenticated investor | only for claimable revenue |
@@ -241,9 +249,37 @@ Supported `sort` values:
 
 ## Authentication
 
-## POST /auth/telegram
+## Auth Session Shape
 
-Authenticates a user through Telegram WebApp init data.
+Successful authentication endpoints return:
+
+```json
+{
+  "access_token": "token",
+  "refresh_token": "refresh-token",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "user": {
+    "id": "uuid",
+    "email": "ops@solashare.dev",
+    "display_name": "Konstantin",
+    "role": "investor",
+    "auth_providers": ["password", "google"]
+  }
+}
+```
+
+Notes:
+
+- `access_token` is sent as `Authorization: Bearer <access_token>`
+- `refresh_token` is sent back to `POST /auth/refresh` and `POST /auth/logout`
+- `auth_providers` reflects linked local identities known by the backend
+
+---
+
+## POST /auth/register
+
+Creates a normal browser account with email and password.
 
 Access:
 
@@ -253,7 +289,79 @@ Access:
 
 ```json
 {
-  "telegram_init_data": "..."
+  "email": "ops@solashare.dev",
+  "password": "Password123!",
+  "display_name": "Konstantin"
+}
+```
+
+### Notes
+
+- the backend stores only a password hash
+- self-serve registration currently creates an `investor` account
+
+---
+
+## POST /auth/login
+
+Authenticates a password user.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "email": "ops@solashare.dev",
+  "password": "Password123!"
+}
+```
+
+### Notes
+
+- returns the standard auth session shape
+- invalid credentials return `401 Unauthorized`
+
+---
+
+## POST /auth/refresh
+
+Rotates a refresh token and returns a new session pair.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "refresh_token": "refresh-token"
+}
+```
+
+### Notes
+
+- refresh tokens are persisted server-side as hashes in `user_sessions`
+- refresh rotation revokes the previous refresh session
+
+---
+
+## POST /auth/logout
+
+Revokes a refresh session.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "refresh_token": "refresh-token"
 }
 ```
 
@@ -261,20 +369,130 @@ Access:
 
 ```json
 {
-  "access_token": "token",
+  "success": true
+}
+```
+
+---
+
+## GET /auth/me
+
+Returns the current authenticated auth profile.
+
+Access:
+
+- authenticated user
+
+### Response
+
+```json
+{
   "user": {
     "id": "uuid",
+    "email": "ops@solashare.dev",
     "display_name": "Konstantin",
-    "role": "investor"
+    "role": "investor",
+    "auth_providers": ["password", "google"]
   }
 }
 ```
 
-### Frontend notes
+---
 
-- store `access_token` and attach it as Bearer token
-- `user.role` controls which UI branch to show
-- login response is intentionally minimal
+## GET /auth/google/url
+
+Builds the Google OAuth authorization URL.
+
+Access:
+
+- public
+
+### Query params
+
+- `redirect_uri` optional override
+- `state` optional frontend correlation value
+
+### Response
+
+```json
+{
+  "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?client_id=..."
+}
+```
+
+---
+
+## POST /auth/google
+
+Exchanges a Google authorization code for a local session.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "code": "4/0AdQt8qh...",
+  "redirect_uri": "https://web.solashare.test/auth/oauth/google/callback"
+}
+```
+
+### Notes
+
+- Google is used only to prove identity; SolaShare still issues its own local session
+- when the Google email matches an existing local identity email, the provider is linked to that user
+
+---
+
+## POST /auth/telegram/login
+
+Authenticates a browser user through the Telegram Login Widget payload.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "id": "777000",
+  "first_name": "Konstantin",
+  "username": "waveofem",
+  "auth_date": "1710000000",
+  "hash": "telegram-widget-signature"
+}
+```
+
+### Notes
+
+- the backend validates the Telegram signature before issuing a local session
+- this route is intended for normal browser sign-in, not Mini App launch auth
+
+---
+
+## POST /auth/telegram
+
+Authenticates a user through Telegram Mini App init data.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "telegram_init_data": "query_id=AAE...&user=%7B...%7D&auth_date=1710000000&hash=..."
+}
+```
+
+### Notes
+
+- this is the preferred auth path when the site is opened inside Telegram Mini App
+- `POST /auth/telegram/miniapp` is an alias of the same flow in the backend
 
 ---
 
@@ -308,6 +526,7 @@ Access:
 - wallet signing UX happens client-side before this call
 - this endpoint stores or refreshes a pending wallet binding request
 - finalize the binding with `POST /transactions/confirm` using `kind: "wallet_link"`
+- wallet linking is post-login account binding, not an authentication method
 - cryptographic wallet signature verification is still a dedicated `TODO @waveofem`
 
 ---
@@ -1053,12 +1272,18 @@ Access:
 
 ### Authentication Flow
 
-1. frontend obtains Telegram WebApp init data
-2. frontend calls `POST /auth/telegram`
-3. frontend stores `access_token`
-4. frontend branches UI using `user.role`
-5. optional wallet flow calls `POST /auth/wallet/link`
-6. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
+1. frontend detects whether Telegram Mini App init data is present
+2. if Mini App context exists, frontend prefers `POST /auth/telegram`
+3. otherwise frontend shows:
+   - `POST /auth/register`
+   - `POST /auth/login`
+   - Google OAuth via `GET /auth/google/url` then `POST /auth/google`
+   - Telegram Login Widget via `POST /auth/telegram/login`
+4. frontend stores `access_token` and `refresh_token`
+5. frontend rotates refresh state with `POST /auth/refresh`
+6. frontend branches UI using `user.role`
+7. optional wallet flow calls `POST /auth/wallet/link`
+8. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
 
 ### Public Asset Discovery Flow
 

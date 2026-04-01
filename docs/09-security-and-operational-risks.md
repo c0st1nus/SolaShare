@@ -55,12 +55,16 @@ Because of this, security must be considered across all layers.
 - unauthorized asset edits
 - privilege escalation
 - repeated POST execution
+- stolen refresh token reuse
+- forged Google authorization code exchange
 - forged wallet links
 
 ### Mitigations
 - role-based access control
 - ownership checks
 - session validation
+- refresh session rotation and revocation
+- OAuth code exchange on the backend only
 - wallet signature verification
 - idempotency keys
 
@@ -104,7 +108,11 @@ Because of this, security must be considered across all layers.
 ## Core Security Requirements
 
 ## Authentication
-- Telegram login must be validated correctly
+- password storage must use a dedicated password hashing algorithm
+- Google authorization codes must be exchanged only on the backend
+- Telegram Login Widget signatures must be validated correctly
+- Telegram Mini App init data must be validated correctly
+- refresh tokens must be stored server-side as hashes and rotated safely
 - wallet linking must verify signed proof of ownership
 
 ## Authorization
