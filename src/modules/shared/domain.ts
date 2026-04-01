@@ -3,6 +3,7 @@ import {
   assetDocumentTypeEnum,
   assetStatusEnum,
   energyTypeEnum,
+  kycStatusEnum,
   revenueSourceTypeEnum,
   revenueStatusEnum,
   saleStatusEnum,
@@ -13,6 +14,7 @@ import {
 } from "../../db/schema";
 
 export const userRoleSchema = z.enum(userRoleEnum.enumValues);
+export const kycStatusSchema = z.enum(kycStatusEnum.enumValues);
 export const energyTypeSchema = z.enum(energyTypeEnum.enumValues);
 export const assetStatusSchema = z.enum(assetStatusEnum.enumValues);
 export const assetDocumentTypeSchema = z.enum(assetDocumentTypeEnum.enumValues);

@@ -7,6 +7,7 @@ import { investmentsService } from "../modules/investments/service";
 import { meService } from "../modules/me/service";
 import { transactionsService } from "../modules/transactions/service";
 import {
+  approveUserKyc,
   createActiveSaleAsset,
   createActiveWalletBinding,
   createUser,
@@ -31,6 +32,7 @@ describe("investments integration", () => {
       role: "investor",
       telegramUserId: "investor-invest-quote",
     });
+    await approveUserKyc(investor.id, admin.id);
     await createActiveWalletBinding(investor.id);
     const { asset } = await createActiveSaleAsset(issuer, admin, {
       saleTerms: {
@@ -60,6 +62,7 @@ describe("investments integration", () => {
       role: "investor",
       telegramUserId: "investor-no-wallet",
     });
+    await approveUserKyc(investor.id, admin.id);
     const { asset } = await createActiveSaleAsset(issuer, admin);
 
     await expect(
@@ -83,6 +86,7 @@ describe("investments integration", () => {
       role: "investor",
       telegramUserId: "investor-pending-invest",
     });
+    await approveUserKyc(investor.id, admin.id);
     await createActiveWalletBinding(investor.id);
     const { asset } = await createActiveSaleAsset(issuer, admin);
 
@@ -114,6 +118,7 @@ describe("investments integration", () => {
       role: "investor",
       telegramUserId: "investor-confirm-invest",
     });
+    await approveUserKyc(investor.id, admin.id);
     await createActiveWalletBinding(investor.id);
     const { asset } = await createActiveSaleAsset(issuer, admin, {
       saleTerms: {
@@ -164,6 +169,7 @@ describe("investments integration", () => {
       role: "investor",
       telegramUserId: "investor-idempotent-invest",
     });
+    await approveUserKyc(investor.id, admin.id);
     await createActiveWalletBinding(investor.id);
     const { asset } = await createActiveSaleAsset(issuer, admin);
 
@@ -189,5 +195,32 @@ describe("investments integration", () => {
       .from(investments)
       .where(eq(investments.id, preparedInvestment.operation_id));
     expect(rows).toHaveLength(1);
+  });
+
+  it("rejects preparing an investment before KYC approval", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-no-kyc",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "admin-no-kyc",
+    });
+    const investor = await createUser({
+      role: "investor",
+      telegramUserId: "investor-no-kyc",
+    });
+    await createActiveWalletBinding(investor.id);
+    const { asset } = await createActiveSaleAsset(issuer, admin);
+
+    await expect(
+      investmentsService.prepareInvestment(investor, {
+        asset_id: asset.id,
+        amount_usdc: 100,
+      }),
+    ).rejects.toMatchObject({
+      code: "KYC_APPROVAL_REQUIRED",
+      status: 403,
+    });
   });
 });

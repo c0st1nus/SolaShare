@@ -3,6 +3,9 @@ import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   adminAssetActionParamsSchema,
   adminAssetActionResponseSchema,
+  adminKycReviewBodySchema,
+  adminKycReviewResponseSchema,
+  adminUserActionParamsSchema,
   adminVerifyBodySchema,
   auditLogsQuerySchema,
   auditLogsResponseSchema,
@@ -11,6 +14,21 @@ import { adminService } from "./service";
 
 export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .use(authPlugin)
+  .post(
+    "/users/:id/kyc-review",
+    ({ auth, params, body }) =>
+      adminService.reviewUserKyc(requireUserRole(auth, ["admin"]), params.id, body),
+    {
+      params: adminUserActionParamsSchema,
+      body: adminKycReviewBodySchema,
+      detail: {
+        summary: "Approve or reject an investor KYC request",
+      },
+      response: {
+        200: adminKycReviewResponseSchema,
+      },
+    },
+  )
   .post(
     "/assets/:id/verify",
     ({ auth, params, body }) =>

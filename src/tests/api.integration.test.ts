@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { env } from "../config/env";
 import { db } from "../db";
-import { userSessions, walletBindings } from "../db/schema";
+import { userSessions, verificationRequests, walletBindings } from "../db/schema";
 import {
   apiRequest,
   createAccessToken,
+  createActiveSaleAsset,
   createActiveWalletBinding,
   createPasswordUser,
   createSignedTelegramInitData,
@@ -110,6 +111,95 @@ describe("api integration", () => {
 
     expect(response.status).toBe(200);
     expect(json?.user).toBeTruthy();
+  });
+
+  it("reads and updates the authenticated profile", async () => {
+    const user = await createPasswordUser({
+      email: "profile@example.com",
+      displayName: "Before Profile",
+    });
+    const token = createAccessToken(user.id);
+
+    const before = await apiRequest({
+      method: "GET",
+      path: "/api/v1/me/profile",
+      token,
+    });
+
+    expect(before.response.status).toBe(200);
+    expect(before.json?.user).toMatchObject({
+      display_name: "Before Profile",
+      bio: null,
+      avatar_url: null,
+      kyc_status: "not_started",
+    });
+
+    const updated = await apiRequest({
+      method: "PATCH",
+      path: "/api/v1/me/profile",
+      token,
+      body: {
+        display_name: "After Profile",
+        bio: "Investor focused on renewable yield.",
+        avatar_url: "https://cdn.example.com/avatar.png",
+      },
+    });
+
+    expect(updated.response.status).toBe(200);
+    expect(updated.json?.user).toMatchObject({
+      display_name: "After Profile",
+      bio: "Investor focused on renewable yield.",
+      avatar_url: "https://cdn.example.com/avatar.png",
+    });
+  });
+
+  it("submits KYC and lets admin review it over HTTP", async () => {
+    const investor = await createUser({
+      role: "investor",
+      telegramUserId: "api-kyc-investor",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-kyc-admin",
+    });
+
+    const submit = await apiRequest({
+      method: "POST",
+      path: "/api/v1/me/kyc/submit",
+      token: createAccessToken(investor.id),
+      body: {
+        document_uri: "https://example.com/kyc/passport.pdf",
+        document_hash: "sha256:passport",
+        notes: "Passport and proof of address",
+      },
+    });
+
+    expect(submit.response.status).toBe(200);
+    expect(submit.json).toMatchObject({
+      success: true,
+      kyc_status: "pending",
+    });
+
+    const review = await apiRequest({
+      method: "POST",
+      path: `/api/v1/admin/users/${investor.id}/kyc-review`,
+      token: createAccessToken(admin.id),
+      body: {
+        outcome: "approved",
+        reason: "Documents verified",
+      },
+    });
+
+    expect(review.response.status).toBe(200);
+    expect(review.json).toMatchObject({
+      success: true,
+      user_id: investor.id,
+      kyc_status: "approved",
+    });
+
+    const [request] = await db.select().from(verificationRequests).limit(1);
+    expect(request?.requestType).toBe("kyc_review");
+    expect(request?.status).toBe("approved");
   });
 
   it("authenticates via telegram miniapp endpoint", async () => {
@@ -218,6 +308,7 @@ describe("api integration", () => {
     const investor = await createUser({
       role: "investor",
       telegramUserId: "api-investor-flow",
+      kycStatus: "approved",
     });
     await createActiveWalletBinding(investor.id);
 
@@ -293,6 +384,36 @@ describe("api integration", () => {
     });
     expect(quote.response.status).toBe(200);
     expect(quote.json?.shares_to_receive).toBe(10);
+  });
+
+  it("blocks investment preparation until KYC is approved over HTTP", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "api-kyc-block-issuer",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-kyc-block-admin",
+    });
+    const investor = await createUser({
+      role: "investor",
+      telegramUserId: "api-kyc-block-investor",
+    });
+    await createActiveWalletBinding(investor.id);
+    const { asset } = await createActiveSaleAsset(issuer, admin);
+
+    const { response, text } = await apiRequest({
+      method: "POST",
+      path: "/api/v1/investments/prepare",
+      token: createAccessToken(investor.id),
+      body: {
+        asset_id: asset.id,
+        amount_usdc: 100,
+      },
+    });
+
+    expect(response.status).toBe(403);
+    expect(text).toContain("KYC approval is required");
   });
 
   it("requires operation_id for investment confirmation", async () => {

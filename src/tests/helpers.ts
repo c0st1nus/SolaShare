@@ -10,6 +10,8 @@ import {
   type NewUser,
   passwordCredentials,
   users,
+  verificationDecisions,
+  verificationRequests,
   walletBindings,
 } from "../db/schema";
 import { redis } from "../lib/redis";
@@ -141,8 +143,14 @@ export const createUser = async (overrides: Partial<NewUser> = {}) => {
     .values({
       telegramUserId: overrides.telegramUserId ?? crypto.randomUUID(),
       displayName: overrides.displayName ?? "Test User",
+      bio: overrides.bio ?? null,
+      avatarUrl: overrides.avatarUrl ?? null,
       role: overrides.role ?? "investor",
       status: overrides.status ?? "active",
+      kycStatus: overrides.kycStatus ?? "not_started",
+      kycSubmittedAt: overrides.kycSubmittedAt ?? null,
+      kycReviewedAt: overrides.kycReviewedAt ?? null,
+      kycDecisionNotes: overrides.kycDecisionNotes ?? null,
       telegramUsername: overrides.telegramUsername ?? null,
       walletAddress: overrides.walletAddress ?? null,
     })
@@ -174,17 +182,20 @@ export const createPasswordUser = async ({
   password = "Password123!",
   displayName = "Password User",
   role = "investor",
+  kycStatus = "not_started",
 }: {
   email: string;
   password?: string;
   displayName?: string;
   role?: "investor" | "issuer" | "admin";
+  kycStatus?: "not_started" | "pending" | "approved" | "rejected" | "needs_changes";
 }) => {
   const [user] = await db
     .insert(users)
     .values({
       displayName,
       role,
+      kycStatus,
     })
     .returning();
 
@@ -209,6 +220,43 @@ export const createPasswordUser = async ({
   });
 
   return user;
+};
+
+export const approveUserKyc = async (userId: string, adminUserId?: string) => {
+  const [request] = await db
+    .insert(verificationRequests)
+    .values({
+      requestedByUserId: userId,
+      requestType: "kyc_review",
+      status: "approved",
+      payloadJson: {
+        document_uri: "https://example.com/kyc/passport.pdf",
+        document_hash: `sha256:${userId}`,
+      },
+      resolvedAt: new Date(),
+    })
+    .returning();
+
+  await db
+    .update(users)
+    .set({
+      kycStatus: "approved",
+      kycSubmittedAt: new Date(),
+      kycReviewedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+
+  if (adminUserId) {
+    await db.insert(verificationDecisions).values({
+      verificationRequestId: request.id,
+      decidedByUserId: adminUserId,
+      outcome: "approved",
+      reason: "Approved in test fixture",
+    });
+  }
+
+  return request;
 };
 
 export const createAssetDraftFixture = async (

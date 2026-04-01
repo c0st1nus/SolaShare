@@ -23,6 +23,13 @@ const shareAmount = (name: string) => numeric(name, { precision: 30, scale: 12 }
 export const userRoleEnum = pgEnum("user_role", ["investor", "issuer", "admin"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "blocked"]);
 export const authProviderEnum = pgEnum("auth_provider", ["password", "google", "telegram"]);
+export const kycStatusEnum = pgEnum("kyc_status", [
+  "not_started",
+  "pending",
+  "approved",
+  "rejected",
+  "needs_changes",
+]);
 
 export const energyTypeEnum = pgEnum("energy_type", [
   "solar",
@@ -58,6 +65,7 @@ export const verificationRequestTypeEnum = pgEnum("verification_request_type", [
   "document_review",
   "issuer_review",
   "revenue_review",
+  "kyc_review",
 ]);
 export const verificationRequestStatusEnum = pgEnum("verification_request_status", [
   "pending",
@@ -142,8 +150,14 @@ export const users = pgTable(
     telegramUserId: text("telegram_user_id"),
     telegramUsername: text("telegram_username"),
     displayName: text("display_name"),
+    bio: text("bio"),
+    avatarUrl: text("avatar_url"),
     role: userRoleEnum("role").default("investor").notNull(),
     status: userStatusEnum("status").default("active").notNull(),
+    kycStatus: kycStatusEnum("kyc_status").default("not_started").notNull(),
+    kycSubmittedAt: timestamp("kyc_submitted_at", { withTimezone: true }),
+    kycReviewedAt: timestamp("kyc_reviewed_at", { withTimezone: true }),
+    kycDecisionNotes: text("kyc_decision_notes"),
     createdAt,
     updatedAt,
   },
@@ -152,6 +166,7 @@ export const users = pgTable(
     uniqueIndex("users_telegram_user_id_unique").on(table.telegramUserId),
     index("users_wallet_address_idx").on(table.walletAddress),
     index("users_telegram_user_id_idx").on(table.telegramUserId),
+    index("users_kyc_status_idx").on(table.kycStatus),
   ],
 );
 

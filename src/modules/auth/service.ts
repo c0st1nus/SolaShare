@@ -214,7 +214,10 @@ export class AuthService {
       id: user.id,
       email,
       display_name: user.displayName ?? email ?? "SolaShare User",
+      bio: user.bio ?? null,
+      avatar_url: user.avatarUrl ?? null,
       role: user.role,
+      kyc_status: user.kycStatus,
       auth_providers: [
         ...new Set(providerRows.map((row) => row.provider)),
       ].sort() as AuthProvider[],

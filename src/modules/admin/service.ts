@@ -6,6 +6,7 @@ import {
   assetStatusHistory,
   assets,
   auditLogs,
+  users,
   verificationDecisions,
   verificationRequests,
 } from "../../db/schema";
@@ -13,6 +14,8 @@ import { ApiError } from "../../lib/api-error";
 import { NotificationService } from "../notifications/service";
 import type {
   adminAssetActionResponseSchema,
+  adminKycReviewBodySchema,
+  adminKycReviewResponseSchema,
   adminVerifyBodySchema,
   auditLogsQuerySchema,
   auditLogsResponseSchema,
@@ -24,6 +27,8 @@ type AdminActor = {
 
 type AdminVerifyBody = z.infer<typeof adminVerifyBodySchema>;
 type AdminAssetActionResponse = z.infer<typeof adminAssetActionResponseSchema>;
+type AdminKycReviewBody = z.infer<typeof adminKycReviewBodySchema>;
+type AdminKycReviewResponse = z.infer<typeof adminKycReviewResponseSchema>;
 type AuditLogsQuery = z.infer<typeof auditLogsQuerySchema>;
 type AuditLogsResponse = z.infer<typeof auditLogsResponseSchema>;
 
@@ -40,6 +45,85 @@ const loadAssetOrThrow = async (assetId: string) => {
 };
 
 export class AdminService {
+  async reviewUserKyc(
+    currentUser: AdminActor,
+    userId: string,
+    input: AdminKycReviewBody,
+  ): Promise<AdminKycReviewResponse> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    const [verificationRequest] = await db
+      .select()
+      .from(verificationRequests)
+      .where(
+        and(
+          eq(verificationRequests.requestedByUserId, userId),
+          eq(verificationRequests.requestType, "kyc_review"),
+          eq(verificationRequests.status, "pending"),
+        ),
+      )
+      .orderBy(desc(verificationRequests.createdAt))
+      .limit(1);
+
+    if (!verificationRequest) {
+      throw new ApiError(
+        409,
+        "KYC_REQUEST_NOT_FOUND",
+        "No pending KYC verification request was found for this user",
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({
+          kycStatus: input.outcome,
+          kycReviewedAt: new Date(),
+          kycDecisionNotes: input.reason ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      await tx
+        .update(verificationRequests)
+        .set({
+          status: input.outcome === "needs_changes" ? "rejected" : input.outcome,
+          resolvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(verificationRequests.id, verificationRequest.id));
+
+      await tx.insert(verificationDecisions).values({
+        verificationRequestId: verificationRequest.id,
+        decidedByUserId: currentUser.id,
+        outcome: input.outcome,
+        reason: input.reason ?? null,
+      });
+
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "user",
+        entityId: userId,
+        action: `user.kyc.${input.outcome}`,
+        payloadJson: {
+          verification_request_id: verificationRequest.id,
+          reason: input.reason ?? null,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      user_id: userId,
+      verification_request_id: verificationRequest.id,
+      kyc_status: input.outcome,
+    };
+  }
+
   async verifyAsset(
     currentUser: AdminActor,
     assetId: string,

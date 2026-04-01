@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { idParamSchema, uuidSchema } from "../shared/contracts";
-import { verificationDecisionOutcomeSchema } from "../shared/domain";
+import { kycStatusSchema, verificationDecisionOutcomeSchema } from "../shared/domain";
 
 export const adminAssetActionParamsSchema = idParamSchema;
 
@@ -13,6 +13,20 @@ export const adminAssetActionResponseSchema = z.object({
   success: z.literal(true),
   asset_id: uuidSchema,
   resulting_status: z.string(),
+});
+
+export const adminUserActionParamsSchema = idParamSchema;
+
+export const adminKycReviewBodySchema = z.object({
+  outcome: z.enum(["approved", "rejected", "needs_changes"]),
+  reason: z.string().trim().min(1).max(2000).optional(),
+});
+
+export const adminKycReviewResponseSchema = z.object({
+  success: z.literal(true),
+  user_id: uuidSchema,
+  verification_request_id: uuidSchema,
+  kyc_status: kycStatusSchema,
 });
 
 export const auditLogsQuerySchema = z.object({

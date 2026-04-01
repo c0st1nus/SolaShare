@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { successResponseSchema, uuidSchema } from "../shared/contracts";
-import { userRoleSchema } from "../shared/domain";
+import { kycStatusSchema, userRoleSchema } from "../shared/domain";
 
 export const authProviderSchema = z.enum(["password", "google", "telegram"]);
 
@@ -49,7 +49,10 @@ export const authUserSchema = z.object({
   id: uuidSchema,
   email: z.string().nullable(),
   display_name: z.string(),
+  bio: z.string().nullable(),
+  avatar_url: z.string().nullable(),
   role: userRoleSchema,
+  kyc_status: kycStatusSchema,
   auth_providers: z.array(authProviderSchema),
 });
 

@@ -9,7 +9,7 @@ import { investmentsService } from "../modules/investments/service";
 import { issuerService } from "../modules/issuer/service";
 import { meService } from "../modules/me/service";
 import { transactionsService } from "../modules/transactions/service";
-import { resetTestState } from "./helpers";
+import { approveUserKyc, resetTestState } from "./helpers";
 
 describe("workflow integration", () => {
   beforeEach(async () => {
@@ -49,6 +49,7 @@ describe("workflow integration", () => {
       verificationMessage: "signed",
       verifiedAt: new Date(),
     });
+    await approveUserKyc(investor.id, admin.id);
 
     const createdAsset = await issuerService.createAssetDraft(issuer, {
       title: "Solar Rooftop A1",

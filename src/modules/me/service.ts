@@ -1,16 +1,174 @@
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
-import { assets, claims, holdingsSnapshots, investments, revenueEpochs } from "../../db/schema";
+import {
+  assets,
+  auditLogs,
+  authIdentities,
+  claims,
+  holdingsSnapshots,
+  investments,
+  revenueEpochs,
+  users,
+  verificationRequests,
+} from "../../db/schema";
+import { ApiError } from "../../lib/api-error";
 import { roundMoney } from "../shared/utils";
-import type { meClaimsResponseSchema, mePortfolioResponseSchema } from "./contracts";
+import type {
+  meClaimsResponseSchema,
+  meKycSubmitBodySchema,
+  meKycSubmitResponseSchema,
+  mePortfolioResponseSchema,
+  meProfileResponseSchema,
+  meProfileUpdateBodySchema,
+} from "./contracts";
 
 type MePortfolioResponse = z.infer<typeof mePortfolioResponseSchema>;
 type MeClaimsResponse = z.infer<typeof meClaimsResponseSchema>;
+type MeProfileResponse = z.infer<typeof meProfileResponseSchema>;
+type MeProfileUpdateBody = z.infer<typeof meProfileUpdateBodySchema>;
+type MeKycSubmitBody = z.infer<typeof meKycSubmitBodySchema>;
+type MeKycSubmitResponse = z.infer<typeof meKycSubmitResponseSchema>;
 
 const toNumber = (value: string | number | null | undefined) => Number(value ?? 0);
 
 export class MeService {
+  private async loadProfile(userId: string): Promise<MeProfileResponse["user"]> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    const providerRows = await db
+      .select({
+        provider: authIdentities.provider,
+        email: authIdentities.email,
+      })
+      .from(authIdentities)
+      .where(eq(authIdentities.userId, userId));
+
+    const email = providerRows.find((row) => row.email)?.email ?? null;
+
+    return {
+      id: user.id,
+      email,
+      display_name: user.displayName ?? email ?? "SolaShare User",
+      bio: user.bio ?? null,
+      avatar_url: user.avatarUrl ?? null,
+      role: user.role,
+      kyc_status: user.kycStatus,
+      auth_providers: [...new Set(providerRows.map((row) => row.provider))].sort() as Array<
+        "password" | "google" | "telegram"
+      >,
+    };
+  }
+
+  async getProfile(userId: string): Promise<MeProfileResponse> {
+    return {
+      user: await this.loadProfile(userId),
+    };
+  }
+
+  async updateProfile(userId: string, input: MeProfileUpdateBody): Promise<MeProfileResponse> {
+    const [existingUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!existingUser) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    await db
+      .update(users)
+      .set({
+        displayName: input.display_name ?? existingUser.displayName,
+        bio: input.bio === undefined ? existingUser.bio : input.bio === null ? null : input.bio,
+        avatarUrl:
+          input.avatar_url === undefined
+            ? existingUser.avatarUrl
+            : input.avatar_url === null
+              ? null
+              : input.avatar_url,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+
+    await db.insert(auditLogs).values({
+      actorUserId: userId,
+      entityType: "user",
+      entityId: userId,
+      action: "user.profile.updated",
+      payloadJson: {
+        display_name: input.display_name ?? undefined,
+        bio_updated: input.bio !== undefined,
+        avatar_url_updated: input.avatar_url !== undefined,
+      },
+    });
+
+    return this.getProfile(userId);
+  }
+
+  async submitKyc(userId: string, input: MeKycSubmitBody): Promise<MeKycSubmitResponse> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    if (user.kycStatus === "approved") {
+      throw new ApiError(409, "KYC_ALREADY_APPROVED", "KYC is already approved");
+    }
+
+    if (user.kycStatus === "pending") {
+      throw new ApiError(409, "KYC_ALREADY_PENDING", "KYC review is already pending");
+    }
+
+    const verificationRequest = await db.transaction(async (tx) => {
+      const [insertedRequest] = await tx
+        .insert(verificationRequests)
+        .values({
+          requestedByUserId: userId,
+          requestType: "kyc_review",
+          status: "pending",
+          payloadJson: {
+            document_uri: input.document_uri,
+            document_hash: input.document_hash,
+            notes: input.notes ?? null,
+          },
+        })
+        .returning();
+
+      await tx
+        .update(users)
+        .set({
+          kycStatus: "pending",
+          kycSubmittedAt: new Date(),
+          kycReviewedAt: null,
+          kycDecisionNotes: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      await tx.insert(auditLogs).values({
+        actorUserId: userId,
+        entityType: "user",
+        entityId: userId,
+        action: "user.kyc.submitted",
+        payloadJson: {
+          verification_request_id: insertedRequest.id,
+          document_uri: input.document_uri,
+        },
+      });
+
+      return insertedRequest;
+    });
+
+    return {
+      success: true,
+      kyc_status: "pending",
+      verification_request_id: verificationRequest.id,
+    };
+  }
+
   async getPortfolio(userId: string): Promise<MePortfolioResponse> {
     const positions = await db
       .select({

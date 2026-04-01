@@ -9,6 +9,7 @@ import { issuerService } from "../modules/issuer/service";
 import { meService } from "../modules/me/service";
 import { transactionsService } from "../modules/transactions/service";
 import {
+  approveUserKyc,
   createActiveSaleAsset,
   createActiveWalletBinding,
   createUser,
@@ -91,6 +92,7 @@ describe("revenue and claims integration", () => {
       role: "investor",
       telegramUserId: "investor-claim",
     });
+    await approveUserKyc(investor.id, admin.id);
     await createActiveWalletBinding(investor.id);
     const { asset } = await createActiveSaleAsset(issuer, admin, {
       saleTerms: {

@@ -127,11 +127,15 @@ Responses generally follow one of these shapes:
 | `POST /auth/telegram/login` | Public | Telegram Login Widget entrypoint |
 | `GET /auth/me` | Authenticated user | current auth profile |
 | `POST /auth/wallet/link` | Authenticated user | links wallet to current user |
+| `GET /me/profile` | Authenticated user | editable profile read model |
+| `PATCH /me/profile` | Authenticated user | update display name, bio, avatar |
+| `POST /me/kyc/submit` | Authenticated user | submit investor KYC for review |
 | `POST /issuer/*` | Authenticated user | current user must own target asset |
 | `GET /me/*` | Authenticated user | current user read models |
-| `POST /investments/*` | Authenticated investor | active sale only |
+| `POST /investments/*` | Authenticated investor | active sale only, `prepare` requires approved KYC |
 | `POST /claims/prepare` | Authenticated investor | only for claimable revenue |
 | `POST /transactions/confirm` | Authenticated user or internal flow | post-signature sync |
+| `POST /admin/users/:id/kyc-review` | Authenticated admin | approve or reject investor KYC |
 | `POST /admin/*` | Authenticated admin | strongly protected |
 | `GET /admin/audit-logs` | Authenticated admin | operational visibility |
 
@@ -263,7 +267,10 @@ Successful authentication endpoints return:
     "id": "uuid",
     "email": "ops@solashare.dev",
     "display_name": "Konstantin",
+    "bio": null,
+    "avatar_url": null,
     "role": "investor",
+    "kyc_status": "not_started",
     "auth_providers": ["password", "google"]
   }
 }
@@ -391,7 +398,10 @@ Access:
     "id": "uuid",
     "email": "ops@solashare.dev",
     "display_name": "Konstantin",
+    "bio": null,
+    "avatar_url": null,
     "role": "investor",
+    "kyc_status": "not_started",
     "auth_providers": ["password", "google"]
   }
 }
@@ -960,6 +970,83 @@ May return:
 
 ## Investor Endpoints
 
+## GET /me/profile
+
+Returns the editable profile state for the authenticated user.
+
+Access:
+
+- authenticated user
+
+### Example response
+
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "ops@solashare.dev",
+    "display_name": "Konstantin",
+    "bio": "Investor focused on renewable yield.",
+    "avatar_url": "https://cdn.example.com/avatar.png",
+    "role": "investor",
+    "kyc_status": "pending",
+    "auth_providers": ["password"]
+  }
+}
+```
+
+---
+
+## PATCH /me/profile
+
+Updates the editable profile state for the authenticated user.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "display_name": "Konstantin S.",
+  "bio": "Investor focused on renewable yield.",
+  "avatar_url": "https://cdn.example.com/avatar.png"
+}
+```
+
+---
+
+## POST /me/kyc/submit
+
+Creates an investor KYC review request and moves the user into `pending`.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "document_uri": "https://example.com/kyc/passport.pdf",
+  "document_hash": "sha256:passport",
+  "notes": "Passport and proof of address"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "kyc_status": "pending",
+  "verification_request_id": "verification-request-uuid"
+}
+```
+
+---
+
 ## GET /me/portfolio
 
 Returns the investor portfolio.
@@ -1052,6 +1139,7 @@ Access:
 
 - use before investment confirmation UI
 - this is a quote, not final settlement truth
+- quote can be shown before KYC approval, but purchase preparation is blocked until KYC is approved
 
 ---
 
@@ -1086,6 +1174,11 @@ Access:
   "message": "Stub investment payload prepared"
 }
 ```
+
+### Notes
+
+- requires an active wallet binding
+- requires `kyc_status = approved`
 
 ---
 
@@ -1184,6 +1277,36 @@ Access:
   "success": true,
   "asset_id": "asset-uuid",
   "resulting_status": "verified"
+}
+```
+
+---
+
+## POST /admin/users/:id/kyc-review
+
+Resolves the latest pending KYC request for a user.
+
+Access:
+
+- authenticated admin
+
+### Request
+
+```json
+{
+  "outcome": "approved",
+  "reason": "All submitted KYC documents are valid"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "user_id": "user-uuid",
+  "verification_request_id": "verification-request-uuid",
+  "kyc_status": "approved"
 }
 ```
 

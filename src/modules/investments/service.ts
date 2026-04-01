@@ -1,7 +1,7 @@
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
-import { assetSaleTerms, assets, investments, walletBindings } from "../../db/schema";
+import { assetSaleTerms, assets, investments, users, walletBindings } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
 import { toMoneyString, toNumber, toShareAmountString } from "../shared/utils";
 import type {
@@ -46,6 +46,24 @@ const getInvestableAsset = async (assetId: string) => {
 };
 
 export class InvestmentsService {
+  private async assertInvestorCanInvest(currentUser: InvestorActor) {
+    const [user] = await db.select().from(users).where(eq(users.id, currentUser.id)).limit(1);
+
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    if (user.kycStatus !== "approved") {
+      throw new ApiError(
+        403,
+        "KYC_APPROVAL_REQUIRED",
+        "KYC approval is required before preparing an investment",
+      );
+    }
+
+    return user;
+  }
+
   async getQuote(
     _currentUser: InvestorActor,
     input: InvestmentQuoteBody,
@@ -91,6 +109,7 @@ export class InvestmentsService {
     currentUser: InvestorActor,
     input: InvestmentQuoteBody,
   ): Promise<InvestmentPrepareResponse> {
+    await this.assertInvestorCanInvest(currentUser);
     const quote = await this.getQuote(currentUser, input);
     const [walletBinding] = await db
       .select()
