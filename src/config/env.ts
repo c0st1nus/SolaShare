@@ -29,6 +29,16 @@ const envSchema = z.object({
   ),
   SOLANA_RPC_URL: z.string().url(),
   SOLANA_COMMITMENT: z.enum(["processed", "confirmed", "finalized"]),
+  SOLANA_PAYER_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  SOLANA_PROGRAM_ID: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().min(1).optional(),
+  ),
+  CHALLENGE_SECRET: z.string().min(32),
+  CHALLENGE_EXPIRY_SECONDS: z.coerce.number().int().positive().default(600),
   HELIUS_API_KEY: z.string().optional(),
   HELIUS_WEBHOOK_SECRET: z.preprocess(
     (value) => (value === "" ? undefined : value),

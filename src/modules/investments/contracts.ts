@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { uuidSchema } from "../shared/contracts";
+import { transactionPayloadSchema, uuidSchema } from "../shared/contracts";
 
 export const investmentQuoteBodySchema = z.object({
   asset_id: uuidSchema,
@@ -12,13 +12,13 @@ export const investmentQuoteResponseSchema = z.object({
   fees_usdc: z.number().nonnegative(),
 });
 
-export const investmentPrepareResponseSchema = z.object({
-  success: z.literal(true),
-  operation_id: uuidSchema,
-  signing_payload: z.object({
-    kind: z.literal("investment"),
-    asset_id: uuidSchema,
-    amount_usdc: z.number().positive(),
-  }),
-  message: z.string(),
+export const investmentMetadataSchema = z.object({
+  kind: z.literal("investment"),
+  asset_id: uuidSchema,
+  amount_usdc: z.number().positive(),
+  shares_to_receive: z.number().positive(),
+});
+
+export const investmentPrepareResponseSchema = transactionPayloadSchema.extend({
+  metadata: investmentMetadataSchema,
 });

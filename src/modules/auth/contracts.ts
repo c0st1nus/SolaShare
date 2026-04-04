@@ -78,3 +78,25 @@ export const walletLinkBodySchema = z.object({
 });
 
 export const walletLinkResponseSchema = successResponseSchema;
+
+export const walletChallengeRequestBodySchema = z.object({
+  wallet_address: z.string().min(32).max(64),
+});
+
+export const walletChallengeResponseSchema = z.object({
+  challenge: z.string(),
+  nonce: z.string(),
+  expires_at: z.string().datetime(),
+});
+
+export const walletVerifyBodySchema = z.object({
+  wallet_address: z.string().min(32).max(64),
+  challenge: z.string().min(1),
+  signature: z.string().min(1),
+});
+
+export const walletVerifyResponseSchema = z.object({
+  success: z.boolean(),
+  verified: z.boolean(),
+  error: z.string().optional(),
+});

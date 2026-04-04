@@ -23,16 +23,16 @@ Primary responsibilities:
 - portfolio delivery
 - admin controls
 
-The backend now persists real workflow state in PostgreSQL. The remaining intentional stub layer is
-Solana transaction building and wallet signature verification, which are left in code as
-`TODO @waveofem` integration points.
+The backend persists real workflow state in PostgreSQL. Prepare endpoints return base64-encoded
+Solana VersionedTransactions for client-side wallet signing. Wallet binding uses Ed25519 signature
+verification with anti-replay protection.
 
 Frontend integration note:
 
 - this document is the human-readable API contract
 - `/openapi` is the interactive source for current route shapes
 - `/openapi/json` is the machine-readable contract for tooling or codegen
-- frontend should integrate against the contract shape, not against current stub values
+- frontend should integrate against the contract shape
 
 ---
 
@@ -45,7 +45,7 @@ Current backend status:
 - issuer, admin, investment, revenue, claim and portfolio flows persist workflow state in PostgreSQL
 - `operation_id` is returned from preparation endpoints and must be sent back to `POST /transactions/confirm`
 - auth and role checks below are enforced by the backend
-- Solana-specific signing payload assembly remains intentionally deferred
+- prepare endpoints return `serialized_tx` (base64 VersionedTransaction), `metadata`, `expires_at`, and `network`
 
 ---
 
@@ -537,7 +537,7 @@ Access:
 - this endpoint stores or refreshes a pending wallet binding request
 - finalize the binding with `POST /transactions/confirm` using `kind: "wallet_link"`
 - wallet linking is post-login account binding, not an authentication method
-- cryptographic wallet signature verification is still a dedicated `TODO @waveofem`
+- cryptographic wallet signature verification is implemented via `/wallet/challenge` and `/wallet/verify`
 
 ---
 

@@ -60,8 +60,8 @@ Current state:
   and transaction confirmation are implemented against PostgreSQL
 - OpenAPI and Scalar documentation are enabled
 - integration tests cover the main off-chain workflow and webhook ingestion
-- Solana transaction assembly and wallet signature verification remain explicit `TODO @waveofem`
-  integration points in code
+- Solana transaction assembly is implemented for investments, revenue posting, and claims
+- wallet signature verification uses Ed25519 with anti-replay protection
 
 ## Commands
 

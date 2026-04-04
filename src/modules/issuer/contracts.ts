@@ -3,6 +3,7 @@ import {
   idParamSchema,
   messageResponseSchema,
   successResponseSchema,
+  transactionPayloadSchema,
   uuidSchema,
 } from "../shared/contracts";
 import {
@@ -83,13 +84,14 @@ export const issuerRevenuePostParamsSchema = z.object({
   epochId: uuidSchema,
 });
 
-export const revenuePostResponseSchema = z.object({
-  success: z.literal(true),
-  operation_id: uuidSchema,
-  transaction_payload: z.object({
-    kind: z.literal("revenue_post"),
-    asset_id: uuidSchema,
-    revenue_epoch_id: uuidSchema,
-  }),
-  message: z.string(),
+export const revenuePostMetadataSchema = z.object({
+  kind: z.literal("revenue_post"),
+  asset_id: uuidSchema,
+  revenue_epoch_id: uuidSchema,
+  epoch_number: z.number().int().positive(),
+  amount_usdc: z.number().nonnegative(),
+});
+
+export const revenuePostResponseSchema = transactionPayloadSchema.extend({
+  metadata: revenuePostMetadataSchema,
 });
