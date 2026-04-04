@@ -127,6 +127,10 @@ Responses generally follow one of these shapes:
 | `POST /auth/telegram/login` | Public | Telegram Login Widget entrypoint |
 | `GET /auth/me` | Authenticated user | current auth profile |
 | `POST /auth/wallet/link` | Authenticated user | links wallet to current user |
+| `GET /admin/users` | Authenticated admin | list platform users |
+| `POST /admin/users` | Authenticated admin | create investor, issuer, or admin account |
+| `POST /admin/users/:id/role` | Authenticated admin | assign or change a user role |
+| `DELETE /admin/users/:id` | Authenticated admin | delete an unreferenced user |
 | `GET /me/profile` | Authenticated user | editable profile read model |
 | `PATCH /me/profile` | Authenticated user | update display name, bio, avatar |
 | `GET /me/kyc` | Authenticated user | current KYC workflow state |

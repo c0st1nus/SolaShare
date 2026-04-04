@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import { eq } from "drizzle-orm";
 import { env } from "../config/env";
 import { db } from "../db";
-import { userSessions, verificationRequests, walletBindings } from "../db/schema";
+import {
+  auditLogs,
+  userSessions,
+  users,
+  verificationRequests,
+  walletBindings,
+} from "../db/schema";
 import {
   apiRequest,
   createAccessToken,
@@ -200,6 +207,167 @@ describe("api integration", () => {
     const [request] = await db.select().from(verificationRequests).limit(1);
     expect(request?.requestType).toBe("kyc_review");
     expect(request?.status).toBe("approved");
+  });
+
+  it("lets an admin assign issuer role over HTTP", async () => {
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-role-admin",
+    });
+    const investor = await createUser({
+      role: "investor",
+      telegramUserId: "api-role-investor",
+    });
+
+    const result = await apiRequest({
+      method: "POST",
+      path: `/api/v1/admin/users/${investor.id}/role`,
+      token: createAccessToken(admin.id),
+      body: {
+        role: "issuer",
+        reason: "Approved as issuer",
+      },
+    });
+
+    expect(result.response.status).toBe(200);
+    expect(result.json).toMatchObject({
+      success: true,
+      user_id: investor.id,
+      role: "issuer",
+    });
+
+    const [updatedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, investor.id))
+      .limit(1);
+    expect(updatedUser?.role).toBe("issuer");
+
+    const rows = await db.select().from(auditLogs);
+    expect(rows.some((row) => row.action === "user.role.updated")).toBe(true);
+  });
+
+  it("lists and creates users over HTTP", async () => {
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-users-admin",
+    });
+    await createPasswordUser({
+      email: "listed-user@example.com",
+      displayName: "Listed User",
+      role: "investor",
+    });
+
+    const listBefore = await apiRequest({
+      method: "GET",
+      path: "/api/v1/admin/users",
+      token: createAccessToken(admin.id),
+    });
+
+    expect(listBefore.response.status).toBe(200);
+    const listedItems = Array.isArray(listBefore.json?.items)
+      ? (listBefore.json.items as Array<{ email?: string }>)
+      : [];
+    expect(
+      listedItems.some((item) => item.email === "listed-user@example.com"),
+    ).toBe(true);
+
+    const createResult = await apiRequest({
+      method: "POST",
+      path: "/api/v1/admin/users",
+      token: createAccessToken(admin.id),
+      body: {
+        email: "new-issuer@example.com",
+        password: "Password123!",
+        display_name: "New Issuer",
+        role: "issuer",
+      },
+    });
+
+    expect(createResult.response.status).toBe(200);
+    expect(createResult.json).toMatchObject({
+      success: true,
+      role: "issuer",
+    });
+  });
+
+  it("deletes an unreferenced user over HTTP", async () => {
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-delete-admin",
+    });
+    const deletable = await createPasswordUser({
+      email: "delete-me@example.com",
+      displayName: "Delete Me",
+      role: "investor",
+    });
+
+    const result = await apiRequest({
+      method: "DELETE",
+      path: `/api/v1/admin/users/${deletable.id}`,
+      token: createAccessToken(admin.id),
+    });
+
+    expect(result.response.status).toBe(200);
+    expect(result.json).toMatchObject({
+      success: true,
+      user_id: deletable.id,
+    });
+  });
+
+  it("blocks deleting a user with restricted references over HTTP", async () => {
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-delete-linked-admin",
+    });
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "api-delete-linked-issuer",
+    });
+
+    await apiRequest({
+      method: "POST",
+      path: "/api/v1/issuer/assets",
+      token: createAccessToken(issuer.id),
+      body: {
+        title: "Delete Blocked Asset",
+        short_description: "Issuer has linked asset",
+        full_description: "Issuer has linked asset and should not be deletable.",
+        energy_type: "solar",
+        location_country: "Kazakhstan",
+        location_city: "Almaty",
+        capacity_kw: 50,
+      },
+    });
+
+    const result = await apiRequest({
+      method: "DELETE",
+      path: `/api/v1/admin/users/${issuer.id}`,
+      token: createAccessToken(admin.id),
+    });
+
+    expect(result.response.status).toBe(409);
+    expect(result.text).toContain("cannot be deleted");
+  });
+
+  it("prevents admin self-role changes over HTTP", async () => {
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "api-last-admin",
+    });
+
+    const result = await apiRequest({
+      method: "POST",
+      path: `/api/v1/admin/users/${admin.id}/role`,
+      token: createAccessToken(admin.id),
+      body: {
+        role: "issuer",
+        reason: "Attempt self demotion",
+      },
+    });
+
+    expect(result.response.status).toBe(409);
+    expect(result.text).toContain("Admins cannot change their own role");
   });
 
   it("authenticates via telegram miniapp endpoint", async () => {

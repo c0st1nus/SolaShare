@@ -1,12 +1,18 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
 import {
+  assetDocuments,
   assetSaleTerms,
   assetStatusHistory,
   assets,
   auditLogs,
   authIdentities,
+  claims,
+  investments,
+  passwordCredentials,
+  revenueDeposits,
+  revenueEpochs,
   users,
   verificationDecisions,
   verificationRequests,
@@ -19,6 +25,13 @@ import type {
   adminKycRequestsResponseSchema,
   adminKycReviewBodySchema,
   adminKycReviewResponseSchema,
+  adminCreateUserBodySchema,
+  adminCreateUserResponseSchema,
+  adminDeleteUserResponseSchema,
+  adminUserRoleUpdateBodySchema,
+  adminUserRoleUpdateResponseSchema,
+  adminUsersQuerySchema,
+  adminUsersResponseSchema,
   adminVerifyBodySchema,
   auditLogsQuerySchema,
   auditLogsResponseSchema,
@@ -34,6 +47,13 @@ type AdminKycRequestsQuery = z.infer<typeof adminKycRequestsQuerySchema>;
 type AdminKycRequestsResponse = z.infer<typeof adminKycRequestsResponseSchema>;
 type AdminKycReviewBody = z.infer<typeof adminKycReviewBodySchema>;
 type AdminKycReviewResponse = z.infer<typeof adminKycReviewResponseSchema>;
+type AdminCreateUserBody = z.infer<typeof adminCreateUserBodySchema>;
+type AdminCreateUserResponse = z.infer<typeof adminCreateUserResponseSchema>;
+type AdminDeleteUserResponse = z.infer<typeof adminDeleteUserResponseSchema>;
+type AdminUserRoleUpdateBody = z.infer<typeof adminUserRoleUpdateBodySchema>;
+type AdminUserRoleUpdateResponse = z.infer<typeof adminUserRoleUpdateResponseSchema>;
+type AdminUsersQuery = z.infer<typeof adminUsersQuerySchema>;
+type AdminUsersResponse = z.infer<typeof adminUsersResponseSchema>;
 type AuditLogsQuery = z.infer<typeof auditLogsQuerySchema>;
 type AuditLogsResponse = z.infer<typeof auditLogsResponseSchema>;
 
@@ -54,6 +74,344 @@ const loadAssetOrThrow = async (assetId: string) => {
 };
 
 export class AdminService {
+  async listUsers(
+    _currentUser: AdminActor,
+    query: AdminUsersQuery,
+  ): Promise<AdminUsersResponse> {
+    const whereClause = and(
+      query.role ? eq(users.role, query.role) : undefined,
+      query.status ? eq(users.status, query.status) : undefined,
+      query.search
+        ? or(
+            ilike(users.displayName, `%${query.search}%`),
+            ilike(authIdentities.email, `%${query.search}%`),
+          )
+        : undefined,
+    );
+
+    const [rows, totals] = await Promise.all([
+      db
+        .select({
+          id: users.id,
+          displayName: users.displayName,
+          role: users.role,
+          status: users.status,
+          kycStatus: users.kycStatus,
+          createdAt: users.createdAt,
+          provider: authIdentities.provider,
+          email: authIdentities.email,
+        })
+        .from(users)
+        .leftJoin(authIdentities, eq(authIdentities.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(users.createdAt))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      db
+        .select({ total: countDistinct(users.id) })
+        .from(users)
+        .leftJoin(authIdentities, eq(authIdentities.userId, users.id))
+        .where(whereClause),
+    ]);
+
+    const userMap = new Map<
+      string,
+      {
+        id: string;
+        display_name: string;
+        email: string | null;
+        role: "investor" | "issuer" | "admin";
+        status: "active" | "blocked";
+        kyc_status:
+          | "not_started"
+          | "pending"
+          | "approved"
+          | "rejected"
+          | "needs_changes";
+        auth_providers: Array<"password" | "google" | "telegram">;
+        created_at: string;
+      }
+    >();
+
+    for (const row of rows) {
+      const existing = userMap.get(row.id);
+
+      if (existing) {
+        if (row.provider && !existing.auth_providers.includes(row.provider)) {
+          existing.auth_providers.push(row.provider);
+        }
+
+        if (!existing.email && row.email) {
+          existing.email = row.email;
+        }
+
+        continue;
+      }
+
+      userMap.set(row.id, {
+        id: row.id,
+        display_name: row.displayName ?? "SolaShare User",
+        email: row.email ?? null,
+        role: row.role,
+        status: row.status,
+        kyc_status: row.kycStatus,
+        auth_providers: row.provider ? [row.provider] : [],
+        created_at: row.createdAt.toISOString(),
+      });
+    }
+
+    return {
+      items: [...userMap.values()],
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total: totals[0]?.total ?? 0,
+      },
+    };
+  }
+
+  async createUser(
+    currentUser: AdminActor,
+    input: AdminCreateUserBody,
+  ): Promise<AdminCreateUserResponse> {
+    const [existingIdentity] = await db
+      .select()
+      .from(authIdentities)
+      .where(eq(authIdentities.email, input.email))
+      .limit(1);
+
+    if (existingIdentity) {
+      throw new ApiError(
+        409,
+        "EMAIL_ALREADY_REGISTERED",
+        "Email address is already registered",
+      );
+    }
+
+    const passwordHash = await Bun.password.hash(input.password, {
+      algorithm: "argon2id",
+    });
+
+    const user = await db.transaction(async (tx) => {
+      const [createdUser] = await tx
+        .insert(users)
+        .values({
+          displayName: input.display_name,
+          role: input.role,
+        })
+        .returning();
+
+      await tx.insert(authIdentities).values({
+        userId: createdUser.id,
+        provider: "password",
+        providerUserId: input.email,
+        email: input.email,
+        profileJson: {
+          email: input.email,
+        },
+      });
+
+      await tx.insert(passwordCredentials).values({
+        userId: createdUser.id,
+        passwordHash,
+      });
+
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "user",
+        entityId: createdUser.id,
+        action: "user.created",
+        payloadJson: {
+          email: input.email,
+          role: input.role,
+        },
+      });
+
+      return createdUser;
+    });
+
+    return {
+      success: true,
+      user_id: user.id,
+      role: user.role,
+    };
+  }
+
+  async updateUserRole(
+    currentUser: AdminActor,
+    userId: string,
+    input: AdminUserRoleUpdateBody,
+  ): Promise<AdminUserRoleUpdateResponse> {
+    const [targetUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!targetUser) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    if (currentUser.id === userId && targetUser.role !== input.role) {
+      throw new ApiError(
+        409,
+        "ROLE_SELF_UPDATE_NOT_ALLOWED",
+        "Admins cannot change their own role",
+      );
+    }
+
+    if (targetUser.role === input.role) {
+      return {
+        success: true,
+        user_id: userId,
+        role: targetUser.role,
+      };
+    }
+
+    if (targetUser.role === "admin" && input.role !== "admin") {
+      const [{ total }] = await db
+        .select({ total: count(users.id) })
+        .from(users)
+        .where(eq(users.role, "admin"));
+
+      if (total <= 1) {
+        throw new ApiError(
+          409,
+          "LAST_ADMIN_ROLE_CHANGE_FORBIDDEN",
+          "Cannot remove the last admin from the platform",
+        );
+      }
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({
+          role: input.role,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "user",
+        entityId: userId,
+        action: "user.role.updated",
+        payloadJson: {
+          previous_role: targetUser.role,
+          role: input.role,
+          reason: input.reason,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      user_id: userId,
+      role: input.role,
+    };
+  }
+
+  async deleteUser(
+    currentUser: AdminActor,
+    userId: string,
+  ): Promise<AdminDeleteUserResponse> {
+    const [targetUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!targetUser) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    if (currentUser.id === userId) {
+      throw new ApiError(
+        409,
+        "SELF_DELETE_FORBIDDEN",
+        "Admins cannot delete their own account",
+      );
+    }
+
+    if (targetUser.role === "admin") {
+      const [{ total }] = await db
+        .select({ total: count(users.id) })
+        .from(users)
+        .where(eq(users.role, "admin"));
+
+      if (total <= 1) {
+        throw new ApiError(
+          409,
+          "LAST_ADMIN_DELETE_FORBIDDEN",
+          "Cannot delete the last admin from the platform",
+        );
+      }
+    }
+
+    const dependencyChecks = await Promise.all([
+      db.select({ id: assets.id }).from(assets).where(eq(assets.issuerUserId, userId)).limit(1),
+      db
+        .select({ id: assetDocuments.id })
+        .from(assetDocuments)
+        .where(eq(assetDocuments.uploadedByUserId, userId))
+        .limit(1),
+      db
+        .select({ id: verificationRequests.id })
+        .from(verificationRequests)
+        .where(eq(verificationRequests.requestedByUserId, userId))
+        .limit(1),
+      db
+        .select({ id: verificationDecisions.id })
+        .from(verificationDecisions)
+        .where(eq(verificationDecisions.decidedByUserId, userId))
+        .limit(1),
+      db
+        .select({ id: investments.id })
+        .from(investments)
+        .where(eq(investments.userId, userId))
+        .limit(1),
+      db
+        .select({ id: revenueEpochs.id })
+        .from(revenueEpochs)
+        .where(eq(revenueEpochs.postedByUserId, userId))
+        .limit(1),
+      db
+        .select({ id: revenueDeposits.id })
+        .from(revenueDeposits)
+        .where(eq(revenueDeposits.depositedByUserId, userId))
+        .limit(1),
+      db.select({ id: claims.id }).from(claims).where(eq(claims.userId, userId)).limit(1),
+    ]);
+
+    if (dependencyChecks.some((rows) => rows.length > 0)) {
+      throw new ApiError(
+        409,
+        "USER_DELETE_BLOCKED",
+        "User cannot be deleted because historical or financial records depend on it",
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "user",
+        entityId: userId,
+        action: "user.deleted",
+        payloadJson: {
+          deleted_role: targetUser.role,
+        },
+      });
+
+      await tx.delete(users).where(eq(users.id, userId));
+    });
+
+    return {
+      success: true,
+      user_id: userId,
+    };
+  }
+
   async listKycRequests(
     _currentUser: AdminActor,
     query: AdminKycRequestsQuery,

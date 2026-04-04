@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { auditLogs, authIdentities, userSessions, users, walletBindings } from "../db/schema";
 import { ApiError } from "../lib/api-error";
+import { bootstrapPasswordAdmin } from "../modules/auth/bootstrap";
 import { authService } from "../modules/auth/service";
 import {
   createPasswordUser,
@@ -48,6 +49,35 @@ describe("auth integration", () => {
 
     const sessions = await db.select().from(userSessions);
     expect(sessions).toHaveLength(1);
+  });
+
+  it("bootstraps the first password admin only once", async () => {
+    const first = await bootstrapPasswordAdmin({
+      email: "admin@example.com",
+      password: "StrongPassword123!",
+      displayName: "Initial Admin",
+    });
+
+    expect(first.role).toBe("admin");
+
+    const [adminUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, first.userId))
+      .limit(1);
+    expect(adminUser?.role).toBe("admin");
+
+    const rows = await db.select().from(auditLogs);
+    expect(
+      rows.some((row) => row.action === "system.bootstrap_admin_created"),
+    ).toBe(true);
+
+    await expect(
+      bootstrapPasswordAdmin({
+        email: "second-admin@example.com",
+        password: "StrongPassword123!",
+      }),
+    ).rejects.toThrow(ApiError);
   });
 
   it("authenticates an existing password user", async () => {

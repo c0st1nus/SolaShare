@@ -7,7 +7,14 @@ import {
   adminKycRequestsResponseSchema,
   adminKycReviewBodySchema,
   adminKycReviewResponseSchema,
+  adminCreateUserBodySchema,
+  adminCreateUserResponseSchema,
+  adminDeleteUserResponseSchema,
+  adminUserRoleUpdateBodySchema,
+  adminUserRoleUpdateResponseSchema,
   adminUserActionParamsSchema,
+  adminUsersQuerySchema,
+  adminUsersResponseSchema,
   adminVerifyBodySchema,
   auditLogsQuerySchema,
   auditLogsResponseSchema,
@@ -16,6 +23,34 @@ import { adminService } from "./service";
 
 export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .use(authPlugin)
+  .get(
+    "/users",
+    ({ auth, query }) =>
+      adminService.listUsers(requireUserRole(auth, ["admin"]), query),
+    {
+      query: adminUsersQuerySchema,
+      detail: {
+        summary: "List platform users",
+      },
+      response: {
+        200: adminUsersResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/users",
+    ({ auth, body }) =>
+      adminService.createUser(requireUserRole(auth, ["admin"]), body),
+    {
+      body: adminCreateUserBodySchema,
+      detail: {
+        summary: "Create a platform user",
+      },
+      response: {
+        200: adminCreateUserResponseSchema,
+      },
+    },
+  )
   .get(
     "/kyc-requests",
     ({ auth, query }) =>
@@ -27,6 +62,39 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
       },
       response: {
         200: adminKycRequestsResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/users/:id/role",
+    ({ auth, params, body }) =>
+      adminService.updateUserRole(
+        requireUserRole(auth, ["admin"]),
+        params.id,
+        body,
+      ),
+    {
+      params: adminUserActionParamsSchema,
+      body: adminUserRoleUpdateBodySchema,
+      detail: {
+        summary: "Assign or change a user role",
+      },
+      response: {
+        200: adminUserRoleUpdateResponseSchema,
+      },
+    },
+  )
+  .delete(
+    "/users/:id",
+    ({ auth, params }) =>
+      adminService.deleteUser(requireUserRole(auth, ["admin"]), params.id),
+    {
+      params: adminUserActionParamsSchema,
+      detail: {
+        summary: "Delete a platform user when no restricted references exist",
+      },
+      response: {
+        200: adminDeleteUserResponseSchema,
       },
     },
   )

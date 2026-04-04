@@ -33,7 +33,13 @@ docker compose up -d
 bun run db:migrate
 ```
 
-5. Start the API:
+5. Bootstrap the first admin on an empty database:
+
+```bash
+bun run bootstrap:admin --email admin@example.com --password 'StrongPassword123!' --display-name 'Platform Admin'
+```
+
+6. Start the API:
 
 ```bash
 bun run dev
@@ -70,6 +76,7 @@ bun run check
 bun run lint
 bun run format
 bun run test
+bun run bootstrap:admin --email admin@example.com --password 'StrongPassword123!'
 bun run db:generate
 bun run db:migrate
 bun run db:push
