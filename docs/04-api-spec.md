@@ -129,7 +129,11 @@ Responses generally follow one of these shapes:
 | `POST /auth/wallet/link` | Authenticated user | links wallet to current user |
 | `GET /me/profile` | Authenticated user | editable profile read model |
 | `PATCH /me/profile` | Authenticated user | update display name, bio, avatar |
+| `GET /me/kyc` | Authenticated user | current KYC workflow state |
 | `POST /me/kyc/submit` | Authenticated user | submit investor KYC for review |
+| `POST /me/kyc/cancel` | Authenticated user | cancel the latest pending KYC submission |
+| `POST /uploads/presign` | Authenticated user | create short-lived upload URL for private document uploads |
+| `PUT /uploads/direct` | Upload token holder | upload raw file bytes for a previously presigned target |
 | `POST /issuer/*` | Authenticated user | current user must own target asset |
 | `GET /me/*` | Authenticated user | current user read models |
 | `POST /investments/*` | Authenticated investor | active sale only, `prepare` requires approved KYC |
@@ -202,6 +206,11 @@ Responses generally follow one of these shapes:
 - `approved`
 - `rejected`
 - `needs_changes`
+
+### KYC Document Type
+
+- `passport`
+- `national_id`
 
 ### Transaction Kind
 
@@ -1017,6 +1026,108 @@ Access:
 
 ---
 
+## GET /me/kyc
+
+Returns the current KYC workflow state for the authenticated user.
+
+Access:
+
+- authenticated user
+
+### Example response
+
+```json
+{
+  "kyc_status": "needs_changes",
+  "submitted_at": "2026-04-04T10:20:00.000Z",
+  "reviewed_at": "2026-04-04T12:10:00.000Z",
+  "decision_notes": "Please upload a clearer passport scan.",
+  "can_submit": true,
+  "current_request": {
+    "verification_request_id": "verification-request-uuid",
+    "request_status": "rejected",
+    "document_type": "passport",
+    "document_name": "passport.pdf",
+    "mime_type": "application/pdf",
+    "document_uri": "http://localhost:3000/api/v1/uploads/files/abc-passport.pdf",
+    "document_hash": "sha256:passport",
+    "notes": "Main identity document",
+    "created_at": "2026-04-04T10:20:00.000Z"
+  }
+}
+```
+
+### Frontend notes
+
+- use this endpoint to drive the dedicated KYC page
+- `can_submit` controls whether the upload form should be visible
+- `decision_notes` should be shown to the user when review requires changes or rejects the submission
+
+---
+
+## POST /uploads/presign
+
+Creates a short-lived direct-upload target for private user files.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "purpose": "kyc_document",
+  "file_name": "passport.pdf",
+  "content_type": "application/pdf",
+  "size_bytes": 482331
+}
+```
+
+### Response
+
+```json
+{
+  "upload_url": "http://localhost:3000/api/v1/uploads/direct?token=...",
+  "file_url": "http://localhost:3000/api/v1/uploads/files/abc-passport.pdf",
+  "upload_method": "PUT",
+  "expires_at": "2026-04-04T10:35:00.000Z"
+}
+```
+
+### Frontend notes
+
+- call this before uploading a KYC file
+- upload the raw file bytes to `upload_url` using the returned HTTP method
+- after upload succeeds, pass the returned `file_url` into `POST /me/kyc/submit`
+- uploaded objects are stored in private S3-compatible storage behind the backend file route
+
+---
+
+## PUT /uploads/direct
+
+Uploads the raw file body to a previously created upload target.
+
+Access:
+
+- upload token holder
+
+### Query params
+
+- `token`
+
+### Response
+
+```json
+{
+  "success": true,
+  "file_url": "http://localhost:3000/api/v1/uploads/files/abc-passport.pdf",
+  "content_hash": "sha256:passport"
+}
+```
+
+---
+
 ## POST /me/kyc/submit
 
 Creates an investor KYC review request and moves the user into `pending`.
@@ -1029,9 +1140,12 @@ Access:
 
 ```json
 {
+  "document_type": "passport",
+  "document_name": "passport.pdf",
+  "mime_type": "application/pdf",
   "document_uri": "https://example.com/kyc/passport.pdf",
   "document_hash": "sha256:passport",
-  "notes": "Passport and proof of address"
+  "notes": "Main identity document"
 }
 ```
 
@@ -1044,6 +1158,31 @@ Access:
   "verification_request_id": "verification-request-uuid"
 }
 ```
+
+---
+
+## POST /me/kyc/cancel
+
+Cancels the latest pending investor KYC submission and returns the user to `not_started`.
+
+Access:
+
+- authenticated user
+
+### Response
+
+```json
+{
+  "success": true,
+  "kyc_status": "not_started",
+  "verification_request_id": "verification-request-uuid"
+}
+```
+
+### Notes
+
+- only the latest pending KYC request can be cancelled
+- approved or already reviewed requests cannot be cancelled
 
 ---
 

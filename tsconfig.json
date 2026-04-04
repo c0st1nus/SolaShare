@@ -30,12 +30,12 @@
     "moduleResolution": "bundler" /* Specify how TypeScript looks up a file from a given module specifier. */,
     "baseUrl": "." /* Allow workspace-local path aliases from the web app to resolve under the root config. */,
     "paths": {
-      "@/*": ["./apps/web/*"]
+      "@/*": ["./solashare-frontend/src/*"],
     } /* Mirror the Next.js app alias so `bun run check` works from the repo root. */,
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
     // "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
     "types": [
-      "bun-types"
+      "bun-types",
     ] /* Specify type package names to be included without being referenced in a source file. */,
     // "allowUmdGlobalAccess": true,                     /* Allow accessing UMD globals from modules. */
     // "moduleSuffixes": [],                             /* List of file name suffixes to search when resolving a module. */
@@ -103,6 +103,12 @@
 
     /* Completeness */
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
-    "skipLibCheck": true /* Skip type checking all .d.ts files. */
-  }
+    "skipLibCheck": true /* Skip type checking all .d.ts files. */,
+  },
+  "include": [
+    "src/**/*.ts",
+    "solashare-frontend/next-env.d.ts",
+    "solashare-frontend/src/**/*.ts",
+    "solashare-frontend/src/**/*.tsx",
+  ],
 }

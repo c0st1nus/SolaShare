@@ -5,12 +5,10 @@
     "apps/*"
   ],
   "scripts": {
-    "dev:backend": "bun run --watch src/index.ts",
-    "dev:frontend": "bun run --filter web dev:local",
-    "dev": "bash ./scripts/dev-all.sh",
+    "dev": "bun run --watch src/index.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "typecheck": "./apps/web/node_modules/.bin/tsc --noEmit -p tsconfig.json",
+    "typecheck": "./node_modules/.bin/tsc --noEmit -p tsconfig.json",
     "check": "bun run typecheck && biome check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

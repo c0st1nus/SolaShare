@@ -16,6 +16,8 @@ import { ApiError } from "../../lib/api-error";
 import { roundMoney } from "../shared/utils";
 import type {
   meClaimsResponseSchema,
+  meKycCancelResponseSchema,
+  meKycOverviewResponseSchema,
   meKycSubmitBodySchema,
   meKycSubmitResponseSchema,
   mePortfolioResponseSchema,
@@ -27,14 +29,23 @@ type MePortfolioResponse = z.infer<typeof mePortfolioResponseSchema>;
 type MeClaimsResponse = z.infer<typeof meClaimsResponseSchema>;
 type MeProfileResponse = z.infer<typeof meProfileResponseSchema>;
 type MeProfileUpdateBody = z.infer<typeof meProfileUpdateBodySchema>;
+type MeKycCancelResponse = z.infer<typeof meKycCancelResponseSchema>;
+type MeKycOverviewResponse = z.infer<typeof meKycOverviewResponseSchema>;
 type MeKycSubmitBody = z.infer<typeof meKycSubmitBodySchema>;
 type MeKycSubmitResponse = z.infer<typeof meKycSubmitResponseSchema>;
 
-const toNumber = (value: string | number | null | undefined) => Number(value ?? 0);
+const toNumber = (value: string | number | null | undefined) =>
+  Number(value ?? 0);
 
 export class MeService {
-  private async loadProfile(userId: string): Promise<MeProfileResponse["user"]> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  private async loadProfile(
+    userId: string,
+  ): Promise<MeProfileResponse["user"]> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -58,9 +69,10 @@ export class MeService {
       avatar_url: user.avatarUrl ?? null,
       role: user.role,
       kyc_status: user.kycStatus,
-      auth_providers: [...new Set(providerRows.map((row) => row.provider))].sort() as Array<
-        "password" | "google" | "telegram"
-      >,
+      wallet_address: user.walletAddress ?? null,
+      auth_providers: [
+        ...new Set(providerRows.map((row) => row.provider)),
+      ].sort() as Array<"password" | "google" | "telegram">,
     };
   }
 
@@ -70,8 +82,75 @@ export class MeService {
     };
   }
 
-  async updateProfile(userId: string, input: MeProfileUpdateBody): Promise<MeProfileResponse> {
-    const [existingUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  async getKycOverview(userId: string): Promise<MeKycOverviewResponse> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    const [request] = await db
+      .select({
+        id: verificationRequests.id,
+        status: verificationRequests.status,
+        payloadJson: verificationRequests.payloadJson,
+        createdAt: verificationRequests.createdAt,
+      })
+      .from(verificationRequests)
+      .where(
+        and(
+          eq(verificationRequests.requestedByUserId, userId),
+          eq(verificationRequests.requestType, "kyc_review"),
+        ),
+      )
+      .orderBy(desc(verificationRequests.createdAt))
+      .limit(1);
+
+    const payload = (request?.payloadJson ?? {}) as {
+      document_type?: "passport" | "national_id";
+      document_name?: string;
+      mime_type?: string;
+      document_uri?: string;
+      document_hash?: string;
+      notes?: string | null;
+    };
+
+    return {
+      kyc_status: user.kycStatus,
+      submitted_at: user.kycSubmittedAt?.toISOString() ?? null,
+      reviewed_at: user.kycReviewedAt?.toISOString() ?? null,
+      decision_notes: user.kycDecisionNotes ?? null,
+      can_submit: user.kycStatus !== "pending" && user.kycStatus !== "approved",
+      current_request:
+        request && payload.document_uri && payload.document_hash
+          ? {
+              verification_request_id: request.id,
+              request_status: request.status,
+              document_type: payload.document_type ?? "passport",
+              document_name: payload.document_name ?? "KYC document",
+              mime_type: payload.mime_type ?? "application/octet-stream",
+              document_uri: payload.document_uri,
+              document_hash: payload.document_hash,
+              notes: payload.notes ?? null,
+              created_at: request.createdAt.toISOString(),
+            }
+          : null,
+    };
+  }
+
+  async updateProfile(
+    userId: string,
+    input: MeProfileUpdateBody,
+  ): Promise<MeProfileResponse> {
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!existingUser) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -81,7 +160,12 @@ export class MeService {
       .update(users)
       .set({
         displayName: input.display_name ?? existingUser.displayName,
-        bio: input.bio === undefined ? existingUser.bio : input.bio === null ? null : input.bio,
+        bio:
+          input.bio === undefined
+            ? existingUser.bio
+            : input.bio === null
+              ? null
+              : input.bio,
         avatarUrl:
           input.avatar_url === undefined
             ? existingUser.avatarUrl
@@ -107,19 +191,34 @@ export class MeService {
     return this.getProfile(userId);
   }
 
-  async submitKyc(userId: string, input: MeKycSubmitBody): Promise<MeKycSubmitResponse> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  async submitKyc(
+    userId: string,
+    input: MeKycSubmitBody,
+  ): Promise<MeKycSubmitResponse> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
     }
 
     if (user.kycStatus === "approved") {
-      throw new ApiError(409, "KYC_ALREADY_APPROVED", "KYC is already approved");
+      throw new ApiError(
+        409,
+        "KYC_ALREADY_APPROVED",
+        "KYC is already approved",
+      );
     }
 
     if (user.kycStatus === "pending") {
-      throw new ApiError(409, "KYC_ALREADY_PENDING", "KYC review is already pending");
+      throw new ApiError(
+        409,
+        "KYC_ALREADY_PENDING",
+        "KYC review is already pending",
+      );
     }
 
     const verificationRequest = await db.transaction(async (tx) => {
@@ -130,6 +229,9 @@ export class MeService {
           requestType: "kyc_review",
           status: "pending",
           payloadJson: {
+            document_type: input.document_type,
+            document_name: input.document_name,
+            mime_type: input.mime_type,
             document_uri: input.document_uri,
             document_hash: input.document_hash,
             notes: input.notes ?? null,
@@ -155,6 +257,9 @@ export class MeService {
         action: "user.kyc.submitted",
         payloadJson: {
           verification_request_id: insertedRequest.id,
+          document_type: input.document_type,
+          document_name: input.document_name,
+          mime_type: input.mime_type,
           document_uri: input.document_uri,
         },
       });
@@ -165,6 +270,77 @@ export class MeService {
     return {
       success: true,
       kyc_status: "pending",
+      verification_request_id: verificationRequest.id,
+    };
+  }
+
+  async cancelKyc(userId: string): Promise<MeKycCancelResponse> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+    }
+
+    const [verificationRequest] = await db
+      .select()
+      .from(verificationRequests)
+      .where(
+        and(
+          eq(verificationRequests.requestedByUserId, userId),
+          eq(verificationRequests.requestType, "kyc_review"),
+          eq(verificationRequests.status, "pending"),
+        ),
+      )
+      .orderBy(desc(verificationRequests.createdAt))
+      .limit(1);
+
+    if (!verificationRequest) {
+      throw new ApiError(
+        409,
+        "KYC_REQUEST_NOT_FOUND",
+        "No pending KYC verification request was found for this user",
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(verificationRequests)
+        .set({
+          status: "cancelled",
+          resolvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(verificationRequests.id, verificationRequest.id));
+
+      await tx
+        .update(users)
+        .set({
+          kycStatus: "not_started",
+          kycSubmittedAt: null,
+          kycReviewedAt: null,
+          kycDecisionNotes: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+
+      await tx.insert(auditLogs).values({
+        actorUserId: userId,
+        entityType: "user",
+        entityId: userId,
+        action: "user.kyc.cancelled",
+        payloadJson: {
+          verification_request_id: verificationRequest.id,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      kyc_status: "not_started",
       verification_request_id: verificationRequest.id,
     };
   }
@@ -184,42 +360,54 @@ export class MeService {
 
     const userAssetIds = positions.map((p) => p.assetId);
 
-    const [investedAggregate, claimedAggregate, revenueRows, claimedByAssetRows] =
-      await Promise.all([
-        db
-          .select({
-            total: sql<string>`coalesce(sum(${investments.amountUsdc}), 0)`,
-          })
-          .from(investments)
-          .where(and(eq(investments.userId, userId), eq(investments.status, "confirmed"))),
-        db
-          .select({
-            total: sql<string>`coalesce(sum(${claims.claimAmountUsdc}), 0)`,
-          })
-          .from(claims)
-          .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
-        userAssetIds.length > 0
-          ? db
-              .select({
-                assetId: revenueEpochs.assetId,
-                distributableRevenueUsdc: revenueEpochs.distributableRevenueUsdc,
-              })
-              .from(revenueEpochs)
-              .where(
-                and(
-                  inArray(revenueEpochs.assetId, userAssetIds),
-                  or(eq(revenueEpochs.status, "posted"), eq(revenueEpochs.status, "settled")),
+    const [
+      investedAggregate,
+      claimedAggregate,
+      revenueRows,
+      claimedByAssetRows,
+    ] = await Promise.all([
+      db
+        .select({
+          total: sql<string>`coalesce(sum(${investments.amountUsdc}), 0)`,
+        })
+        .from(investments)
+        .where(
+          and(
+            eq(investments.userId, userId),
+            eq(investments.status, "confirmed"),
+          ),
+        ),
+      db
+        .select({
+          total: sql<string>`coalesce(sum(${claims.claimAmountUsdc}), 0)`,
+        })
+        .from(claims)
+        .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
+      userAssetIds.length > 0
+        ? db
+            .select({
+              assetId: revenueEpochs.assetId,
+              distributableRevenueUsdc: revenueEpochs.distributableRevenueUsdc,
+            })
+            .from(revenueEpochs)
+            .where(
+              and(
+                inArray(revenueEpochs.assetId, userAssetIds),
+                or(
+                  eq(revenueEpochs.status, "posted"),
+                  eq(revenueEpochs.status, "settled"),
                 ),
-              )
-          : Promise.resolve([]),
-        db
-          .select({
-            assetId: claims.assetId,
-            claimAmountUsdc: claims.claimAmountUsdc,
-          })
-          .from(claims)
-          .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
-      ]);
+              ),
+            )
+        : Promise.resolve([]),
+      db
+        .select({
+          assetId: claims.assetId,
+          claimAmountUsdc: claims.claimAmountUsdc,
+        })
+        .from(claims)
+        .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
+    ]);
 
     const revenueByAsset = new Map<string, number>();
     const claimedByAsset = new Map<string, number>();
@@ -235,7 +423,8 @@ export class MeService {
     for (const claimedRow of claimedByAssetRows) {
       claimedByAsset.set(
         claimedRow.assetId,
-        (claimedByAsset.get(claimedRow.assetId) ?? 0) + toNumber(claimedRow.claimAmountUsdc),
+        (claimedByAsset.get(claimedRow.assetId) ?? 0) +
+          toNumber(claimedRow.claimAmountUsdc),
       );
     }
 
@@ -244,8 +433,12 @@ export class MeService {
       const grossEntitlement = roundMoney(
         (revenueByAsset.get(position.assetId) ?? 0) * sharesPercentage,
       );
-      const confirmedClaims = roundMoney(claimedByAsset.get(position.assetId) ?? 0);
-      const unclaimedUsdc = roundMoney(Math.max(grossEntitlement - confirmedClaims, 0));
+      const confirmedClaims = roundMoney(
+        claimedByAsset.get(position.assetId) ?? 0,
+      );
+      const unclaimedUsdc = roundMoney(
+        Math.max(grossEntitlement - confirmedClaims, 0),
+      );
 
       return {
         asset_id: position.assetId,
@@ -260,7 +453,10 @@ export class MeService {
       total_invested_usdc: toNumber(investedAggregate[0]?.total),
       total_claimed_usdc: toNumber(claimedAggregate[0]?.total),
       total_unclaimed_usdc: roundMoney(
-        mappedPositions.reduce((sum, position) => sum + position.unclaimed_usdc, 0),
+        mappedPositions.reduce(
+          (sum, position) => sum + position.unclaimed_usdc,
+          0,
+        ),
       ),
       positions: mappedPositions,
     };

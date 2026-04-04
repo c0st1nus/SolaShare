@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
 import {
@@ -6,6 +6,7 @@ import {
   assetStatusHistory,
   assets,
   auditLogs,
+  authIdentities,
   users,
   verificationDecisions,
   verificationRequests,
@@ -14,6 +15,8 @@ import { ApiError } from "../../lib/api-error";
 import { NotificationService } from "../notifications/service";
 import type {
   adminAssetActionResponseSchema,
+  adminKycRequestsQuerySchema,
+  adminKycRequestsResponseSchema,
   adminKycReviewBodySchema,
   adminKycReviewResponseSchema,
   adminVerifyBodySchema,
@@ -27,6 +30,8 @@ type AdminActor = {
 
 type AdminVerifyBody = z.infer<typeof adminVerifyBodySchema>;
 type AdminAssetActionResponse = z.infer<typeof adminAssetActionResponseSchema>;
+type AdminKycRequestsQuery = z.infer<typeof adminKycRequestsQuerySchema>;
+type AdminKycRequestsResponse = z.infer<typeof adminKycRequestsResponseSchema>;
 type AdminKycReviewBody = z.infer<typeof adminKycReviewBodySchema>;
 type AdminKycReviewResponse = z.infer<typeof adminKycReviewResponseSchema>;
 type AuditLogsQuery = z.infer<typeof auditLogsQuerySchema>;
@@ -35,7 +40,11 @@ type AuditLogsResponse = z.infer<typeof auditLogsResponseSchema>;
 const notificationsService = new NotificationService();
 
 const loadAssetOrThrow = async (assetId: string) => {
-  const [asset] = await db.select().from(assets).where(eq(assets.id, assetId)).limit(1);
+  const [asset] = await db
+    .select()
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .limit(1);
 
   if (!asset) {
     throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
@@ -45,12 +54,102 @@ const loadAssetOrThrow = async (assetId: string) => {
 };
 
 export class AdminService {
+  async listKycRequests(
+    _currentUser: AdminActor,
+    query: AdminKycRequestsQuery,
+  ): Promise<AdminKycRequestsResponse> {
+    const whereClause = and(
+      eq(verificationRequests.requestType, "kyc_review"),
+      eq(verificationRequests.status, query.status),
+    );
+
+    const [rows, totals] = await Promise.all([
+      db
+        .select({
+          verificationRequestId: verificationRequests.id,
+          userId: users.id,
+          displayName: users.displayName,
+          kycStatus: users.kycStatus,
+          payloadJson: verificationRequests.payloadJson,
+          createdAt: verificationRequests.createdAt,
+        })
+        .from(verificationRequests)
+        .innerJoin(users, eq(users.id, verificationRequests.requestedByUserId))
+        .where(whereClause)
+        .orderBy(desc(verificationRequests.createdAt))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      db
+        .select({
+          total: count(verificationRequests.id),
+        })
+        .from(verificationRequests)
+        .where(whereClause),
+    ]);
+
+    const userIds = [...new Set(rows.map((row) => row.userId))];
+    const identityRows =
+      userIds.length === 0
+        ? []
+        : await db
+            .select({
+              userId: authIdentities.userId,
+              email: authIdentities.email,
+            })
+            .from(authIdentities)
+            .where(inArray(authIdentities.userId, userIds));
+
+    const emailByUserId = new Map<string, string | null>();
+    for (const identityRow of identityRows) {
+      if (identityRow.email && !emailByUserId.has(identityRow.userId)) {
+        emailByUserId.set(identityRow.userId, identityRow.email);
+      }
+    }
+
+    return {
+      items: rows.map((row) => {
+        const payload = (row.payloadJson ?? {}) as {
+          document_type?: "passport" | "national_id";
+          document_name?: string;
+          mime_type?: string;
+          document_uri?: string;
+          document_hash?: string;
+          notes?: string | null;
+        };
+
+        return {
+          verification_request_id: row.verificationRequestId,
+          user_id: row.userId,
+          display_name: row.displayName ?? "SolaShare User",
+          email: emailByUserId.get(row.userId) ?? null,
+          kyc_status: row.kycStatus,
+          document_type: payload.document_type ?? "passport",
+          document_name: payload.document_name ?? "KYC document",
+          mime_type: payload.mime_type ?? "application/octet-stream",
+          document_uri: payload.document_uri ?? "",
+          document_hash: payload.document_hash ?? "",
+          notes: payload.notes ?? null,
+          created_at: row.createdAt.toISOString(),
+        };
+      }),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total: totals[0]?.total ?? 0,
+      },
+    };
+  }
+
   async reviewUserKyc(
     currentUser: AdminActor,
     userId: string,
     input: AdminKycReviewBody,
   ): Promise<AdminKycReviewResponse> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -91,7 +190,8 @@ export class AdminService {
       await tx
         .update(verificationRequests)
         .set({
-          status: input.outcome === "needs_changes" ? "rejected" : input.outcome,
+          status:
+            input.outcome === "needs_changes" ? "rejected" : input.outcome,
           resolvedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -134,7 +234,10 @@ export class AdminService {
       .select()
       .from(verificationRequests)
       .where(
-        and(eq(verificationRequests.assetId, assetId), eq(verificationRequests.status, "pending")),
+        and(
+          eq(verificationRequests.assetId, assetId),
+          eq(verificationRequests.status, "pending"),
+        ),
       )
       .orderBy(desc(verificationRequests.createdAt))
       .limit(1);
@@ -148,7 +251,8 @@ export class AdminService {
     }
 
     const resultingStatus = input.outcome === "approved" ? "verified" : "draft";
-    const verificationRequestStatus = input.outcome === "approved" ? "approved" : "rejected";
+    const verificationRequestStatus =
+      input.outcome === "approved" ? "approved" : "rejected";
 
     await db.transaction(async (tx) => {
       await tx
@@ -214,7 +318,10 @@ export class AdminService {
     };
   }
 
-  async freezeAsset(currentUser: AdminActor, assetId: string): Promise<AdminAssetActionResponse> {
+  async freezeAsset(
+    currentUser: AdminActor,
+    assetId: string,
+  ): Promise<AdminAssetActionResponse> {
     const asset = await loadAssetOrThrow(assetId);
 
     await db.transaction(async (tx) => {
@@ -266,7 +373,10 @@ export class AdminService {
     };
   }
 
-  async closeAsset(currentUser: AdminActor, assetId: string): Promise<AdminAssetActionResponse> {
+  async closeAsset(
+    currentUser: AdminActor,
+    assetId: string,
+  ): Promise<AdminAssetActionResponse> {
     const asset = await loadAssetOrThrow(assetId);
 
     await db.transaction(async (tx) => {
@@ -309,7 +419,10 @@ export class AdminService {
     };
   }
 
-  async listAuditLogs(_currentUser: AdminActor, query: AuditLogsQuery): Promise<AuditLogsResponse> {
+  async listAuditLogs(
+    _currentUser: AdminActor,
+    query: AuditLogsQuery,
+  ): Promise<AuditLogsResponse> {
     const filters = [];
 
     if (query.entity_type) {
@@ -321,7 +434,11 @@ export class AdminService {
     }
 
     const whereClause =
-      filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters);
+      filters.length === 0
+        ? undefined
+        : filters.length === 1
+          ? filters[0]
+          : and(...filters);
 
     const [rows, totals] = await Promise.all([
       db

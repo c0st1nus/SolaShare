@@ -37,7 +37,9 @@ export const telegramLoginBodySchema = z.object({
   last_name: z.string().trim().optional(),
   username: z.string().trim().optional(),
   photo_url: z.string().url().optional(),
-  auth_date: z.union([z.string(), z.number()]).transform((value) => String(value)),
+  auth_date: z
+    .union([z.string(), z.number()])
+    .transform((value) => String(value)),
   hash: z.string().min(1),
 });
 
@@ -53,6 +55,7 @@ export const authUserSchema = z.object({
   avatar_url: z.string().nullable(),
   role: userRoleSchema,
   kyc_status: kycStatusSchema,
+  wallet_address: z.string().nullable().optional(),
   auth_providers: z.array(authProviderSchema),
 });
 

@@ -113,6 +113,9 @@ May include:
 - sensitive legal documents
 - internal issuer files
 - admin review materials
+- investor KYC documents
+
+Private files should be stored in S3-compatible object storage with backend-controlled access paths.
 
 ---
 

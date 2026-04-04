@@ -195,7 +195,7 @@ export async function cleanupExpiredChallenges(): Promise<number> {
       ),
     );
 
-  const count = result.rowCount ?? 0;
+  const count = Array.isArray(result) ? result.length : 0;
   if (count > 0) {
     log.info({ count }, "Cleaned up expired wallet challenges");
   }

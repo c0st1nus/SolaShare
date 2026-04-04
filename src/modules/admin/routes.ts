@@ -3,6 +3,8 @@ import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   adminAssetActionParamsSchema,
   adminAssetActionResponseSchema,
+  adminKycRequestsQuerySchema,
+  adminKycRequestsResponseSchema,
   adminKycReviewBodySchema,
   adminKycReviewResponseSchema,
   adminUserActionParamsSchema,
@@ -14,10 +16,28 @@ import { adminService } from "./service";
 
 export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .use(authPlugin)
+  .get(
+    "/kyc-requests",
+    ({ auth, query }) =>
+      adminService.listKycRequests(requireUserRole(auth, ["admin"]), query),
+    {
+      query: adminKycRequestsQuerySchema,
+      detail: {
+        summary: "List KYC verification requests",
+      },
+      response: {
+        200: adminKycRequestsResponseSchema,
+      },
+    },
+  )
   .post(
     "/users/:id/kyc-review",
     ({ auth, params, body }) =>
-      adminService.reviewUserKyc(requireUserRole(auth, ["admin"]), params.id, body),
+      adminService.reviewUserKyc(
+        requireUserRole(auth, ["admin"]),
+        params.id,
+        body,
+      ),
     {
       params: adminUserActionParamsSchema,
       body: adminKycReviewBodySchema,
@@ -32,7 +52,11 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .post(
     "/assets/:id/verify",
     ({ auth, params, body }) =>
-      adminService.verifyAsset(requireUserRole(auth, ["admin"]), params.id, body),
+      adminService.verifyAsset(
+        requireUserRole(auth, ["admin"]),
+        params.id,
+        body,
+      ),
     {
       params: adminAssetActionParamsSchema,
       body: adminVerifyBodySchema,
@@ -46,7 +70,8 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .post(
     "/assets/:id/freeze",
-    ({ auth, params }) => adminService.freezeAsset(requireUserRole(auth, ["admin"]), params.id),
+    ({ auth, params }) =>
+      adminService.freezeAsset(requireUserRole(auth, ["admin"]), params.id),
     {
       params: adminAssetActionParamsSchema,
       detail: {
@@ -59,7 +84,8 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .post(
     "/assets/:id/close",
-    ({ auth, params }) => adminService.closeAsset(requireUserRole(auth, ["admin"]), params.id),
+    ({ auth, params }) =>
+      adminService.closeAsset(requireUserRole(auth, ["admin"]), params.id),
     {
       params: adminAssetActionParamsSchema,
       detail: {
@@ -72,7 +98,8 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .get(
     "/audit-logs",
-    ({ auth, query }) => adminService.listAuditLogs(requireUserRole(auth, ["admin"]), query),
+    ({ auth, query }) =>
+      adminService.listAuditLogs(requireUserRole(auth, ["admin"]), query),
     {
       query: auditLogsQuerySchema,
       detail: {

@@ -39,6 +39,12 @@ const envSchema = z.object({
   ),
   CHALLENGE_SECRET: z.string().min(32),
   CHALLENGE_EXPIRY_SECONDS: z.coerce.number().int().positive().default(600),
+  STORAGE_PROVIDER: z.enum(["s3"]).default("s3"),
+  S3_ENDPOINT: z.string().url(),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_BUCKET: z.string().min(1),
+  S3_ACCESS_KEY: z.string().min(1),
+  S3_SECRET_KEY: z.string().min(1),
   HELIUS_API_KEY: z.string().optional(),
   HELIUS_WEBHOOK_SECRET: z.preprocess(
     (value) => (value === "" ? undefined : value),
