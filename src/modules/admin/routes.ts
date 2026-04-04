@@ -3,16 +3,19 @@ import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   adminAssetActionParamsSchema,
   adminAssetActionResponseSchema,
+  adminAssetDetailSchema,
+  adminAssetsQuerySchema,
+  adminAssetsResponseSchema,
+  adminCreateUserBodySchema,
+  adminCreateUserResponseSchema,
+  adminDeleteUserResponseSchema,
   adminKycRequestsQuerySchema,
   adminKycRequestsResponseSchema,
   adminKycReviewBodySchema,
   adminKycReviewResponseSchema,
-  adminCreateUserBodySchema,
-  adminCreateUserResponseSchema,
-  adminDeleteUserResponseSchema,
+  adminUserActionParamsSchema,
   adminUserRoleUpdateBodySchema,
   adminUserRoleUpdateResponseSchema,
-  adminUserActionParamsSchema,
   adminUsersQuerySchema,
   adminUsersResponseSchema,
   adminVerifyBodySchema,
@@ -24,9 +27,35 @@ import { adminService } from "./service";
 export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .use(authPlugin)
   .get(
+    "/assets",
+    ({ auth, query }) => adminService.listAssets(requireUserRole(auth, ["admin"]), query),
+    {
+      query: adminAssetsQuerySchema,
+      detail: {
+        summary: "List assets for admin review and operations",
+      },
+      response: {
+        200: adminAssetsResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/assets/:id",
+    ({ auth, params }) =>
+      adminService.getAssetDetails(requireUserRole(auth, ["admin"]), params.id),
+    {
+      params: adminAssetActionParamsSchema,
+      detail: {
+        summary: "Get full asset detail for admin review",
+      },
+      response: {
+        200: adminAssetDetailSchema,
+      },
+    },
+  )
+  .get(
     "/users",
-    ({ auth, query }) =>
-      adminService.listUsers(requireUserRole(auth, ["admin"]), query),
+    ({ auth, query }) => adminService.listUsers(requireUserRole(auth, ["admin"]), query),
     {
       query: adminUsersQuerySchema,
       detail: {
@@ -39,8 +68,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .post(
     "/users",
-    ({ auth, body }) =>
-      adminService.createUser(requireUserRole(auth, ["admin"]), body),
+    ({ auth, body }) => adminService.createUser(requireUserRole(auth, ["admin"]), body),
     {
       body: adminCreateUserBodySchema,
       detail: {
@@ -53,8 +81,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .get(
     "/kyc-requests",
-    ({ auth, query }) =>
-      adminService.listKycRequests(requireUserRole(auth, ["admin"]), query),
+    ({ auth, query }) => adminService.listKycRequests(requireUserRole(auth, ["admin"]), query),
     {
       query: adminKycRequestsQuerySchema,
       detail: {
@@ -68,11 +95,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .post(
     "/users/:id/role",
     ({ auth, params, body }) =>
-      adminService.updateUserRole(
-        requireUserRole(auth, ["admin"]),
-        params.id,
-        body,
-      ),
+      adminService.updateUserRole(requireUserRole(auth, ["admin"]), params.id, body),
     {
       params: adminUserActionParamsSchema,
       body: adminUserRoleUpdateBodySchema,
@@ -86,8 +109,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .delete(
     "/users/:id",
-    ({ auth, params }) =>
-      adminService.deleteUser(requireUserRole(auth, ["admin"]), params.id),
+    ({ auth, params }) => adminService.deleteUser(requireUserRole(auth, ["admin"]), params.id),
     {
       params: adminUserActionParamsSchema,
       detail: {
@@ -101,11 +123,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .post(
     "/users/:id/kyc-review",
     ({ auth, params, body }) =>
-      adminService.reviewUserKyc(
-        requireUserRole(auth, ["admin"]),
-        params.id,
-        body,
-      ),
+      adminService.reviewUserKyc(requireUserRole(auth, ["admin"]), params.id, body),
     {
       params: adminUserActionParamsSchema,
       body: adminKycReviewBodySchema,
@@ -120,11 +138,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   .post(
     "/assets/:id/verify",
     ({ auth, params, body }) =>
-      adminService.verifyAsset(
-        requireUserRole(auth, ["admin"]),
-        params.id,
-        body,
-      ),
+      adminService.verifyAsset(requireUserRole(auth, ["admin"]), params.id, body),
     {
       params: adminAssetActionParamsSchema,
       body: adminVerifyBodySchema,
@@ -138,8 +152,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .post(
     "/assets/:id/freeze",
-    ({ auth, params }) =>
-      adminService.freezeAsset(requireUserRole(auth, ["admin"]), params.id),
+    ({ auth, params }) => adminService.freezeAsset(requireUserRole(auth, ["admin"]), params.id),
     {
       params: adminAssetActionParamsSchema,
       detail: {
@@ -152,8 +165,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .post(
     "/assets/:id/close",
-    ({ auth, params }) =>
-      adminService.closeAsset(requireUserRole(auth, ["admin"]), params.id),
+    ({ auth, params }) => adminService.closeAsset(requireUserRole(auth, ["admin"]), params.id),
     {
       params: adminAssetActionParamsSchema,
       detail: {
@@ -166,8 +178,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .get(
     "/audit-logs",
-    ({ auth, query }) =>
-      adminService.listAuditLogs(requireUserRole(auth, ["admin"]), query),
+    ({ auth, query }) => adminService.listAuditLogs(requireUserRole(auth, ["admin"]), query),
     {
       query: auditLogsQuerySchema,
       detail: {

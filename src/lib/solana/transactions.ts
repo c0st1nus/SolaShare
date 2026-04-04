@@ -18,6 +18,7 @@ import {
   createComputeBudgetInstructions,
   serializeTransaction,
 } from "./utils";
+import { ApiError } from "../api-error";
 import { logger } from "../logger";
 
 const log = logger.child({ module: "solana-transactions" });
@@ -83,9 +84,30 @@ export interface ClaimMetadata {
  */
 function getProgramId(): PublicKey {
   if (!programId) {
-    throw new Error("SOLANA_PROGRAM_ID not configured");
+    throw new ApiError(500, "SOLANA_PROGRAM_ID_MISSING", "Solana program is not configured");
   }
-  return new PublicKey(programId);
+
+  try {
+    return new PublicKey(programId);
+  } catch {
+    throw new ApiError(
+      500,
+      "SOLANA_PROGRAM_ID_INVALID",
+      "Solana program configuration is invalid",
+    );
+  }
+}
+
+function parseWalletPublicKey(walletAddress: string, fieldLabel: string): PublicKey {
+  try {
+    return new PublicKey(walletAddress);
+  } catch {
+    throw new ApiError(
+      409,
+      "INVALID_WALLET_ADDRESS",
+      `${fieldLabel} is not a valid Solana wallet address`,
+    );
+  }
 }
 
 /**
@@ -288,7 +310,10 @@ export async function prepareInvestmentTransaction(params: {
 }): Promise<TransactionPayload> {
   const { operationId, assetId, investorWalletAddress, amountUsdc, sharesToReceive } = params;
 
-  const investorPubkey = new PublicKey(investorWalletAddress);
+  const investorPubkey = parseWalletPublicKey(
+    investorWalletAddress,
+    "Investor wallet address",
+  );
 
   const instruction = buildBuySharesInstruction({
     assetId,
@@ -327,7 +352,7 @@ export async function prepareRevenuePostTransaction(params: {
     reportHash,
   } = params;
 
-  const issuerPubkey = new PublicKey(issuerWalletAddress);
+  const issuerPubkey = parseWalletPublicKey(issuerWalletAddress, "Issuer wallet address");
 
   const instruction = buildPostRevenueInstruction({
     assetId,
@@ -368,7 +393,10 @@ export async function prepareClaimTransaction(params: {
     revenueEpochId,
   } = params;
 
-  const claimantPubkey = new PublicKey(claimantWalletAddress);
+  const claimantPubkey = parseWalletPublicKey(
+    claimantWalletAddress,
+    "Claimant wallet address",
+  );
 
   const instruction = buildClaimYieldInstruction({
     assetId,

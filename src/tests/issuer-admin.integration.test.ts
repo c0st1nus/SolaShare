@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import {
+  assetSaleTerms,
   assetStatusHistory,
   assets,
   auditLogs,
@@ -92,6 +93,7 @@ describe("issuer and admin integration", () => {
     const verifyResult = await adminService.verifyAsset(admin, createdAsset.asset_id, {
       outcome: "approved",
       reason: "Looks good",
+      issues: [],
     });
     expect(verifyResult.resulting_status).toBe("verified");
 
@@ -116,6 +118,72 @@ describe("issuer and admin integration", () => {
     expect(verificationDecision).toHaveLength(1);
   });
 
+  it("derives pricing fields from asset capacity when simplified sale terms are used", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-derived-sale-terms",
+    });
+    const createdAsset = await issuerService.createAssetDraft(issuer, {
+      title: "Derived pricing asset",
+      short_description: "Short description for derived pricing asset",
+      full_description: "Full description for derived pricing asset used in tests.",
+      energy_type: "solar",
+      location_country: "Kazakhstan",
+      location_city: "Almaty",
+      capacity_kw: 150,
+    });
+
+    await issuerService.saveSaleTerms(issuer, createdAsset.asset_id, {
+      valuation_usdc: 90000,
+      minimum_buy_amount_usdc: 75,
+    });
+
+    const [saleTerms] = await db
+      .select()
+      .from(assetSaleTerms)
+      .where(eq(assetSaleTerms.assetId, createdAsset.asset_id))
+      .limit(1);
+
+    expect(saleTerms?.totalShares).toBe(15000);
+    expect(saleTerms?.pricePerShareUsdc).toBe("6.000000");
+    expect(saleTerms?.targetRaiseUsdc).toBe("90000.000000");
+  });
+
+  it("returns structured review issues for issuer-managed assets", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-review-feedback",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "admin-review-feedback",
+    });
+    const createdAsset = await createAssetDraftFixture(issuer);
+
+    await issuerService.submitAssetForWorkflow(issuer, createdAsset.asset_id);
+    await adminService.verifyAsset(admin, createdAsset.asset_id, {
+      outcome: "needs_changes",
+      reason: "Financial data does not match the project passport",
+      issues: [
+        {
+          field: "valuation_usdc",
+          label: "Asset valuation",
+          note: "Price in the technical passport differs from the submitted valuation.",
+          actual_value: "100000 USDC",
+          expected_value: "95000 USDC",
+          document_type: "technical_passport",
+        },
+      ],
+    });
+
+    const details = await issuerService.getOwnedAssetDetails(issuer, createdAsset.asset_id);
+
+    expect(details.status).toBe("draft");
+    expect(details.review_feedback?.outcome).toBe("needs_changes");
+    expect(details.review_feedback?.issues[0]?.field).toBe("valuation_usdc");
+    expect(details.review_feedback?.issues[0]?.document_type).toBe("technical_passport");
+  });
+
   it("freezes and closes an asset with audit history", async () => {
     const issuer = await createUser({
       role: "issuer",
@@ -130,6 +198,7 @@ describe("issuer and admin integration", () => {
     await adminService.verifyAsset(admin, createdAsset.asset_id, {
       outcome: "approved",
       reason: "Approved",
+      issues: [],
     });
     await issuerService.submitAssetForWorkflow(issuer, createdAsset.asset_id);
 

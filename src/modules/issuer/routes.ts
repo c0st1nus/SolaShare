@@ -3,8 +3,11 @@ import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   issuerActionParamsSchema,
   issuerAssetBodySchema,
+  issuerAssetDetailSchema,
   issuerAssetDocumentBodySchema,
   issuerAssetDocumentResponseSchema,
+  issuerAssetListQuerySchema,
+  issuerAssetListResponseSchema,
   issuerAssetResponseSchema,
   issuerAssetUpdateBodySchema,
   issuerRevenuePostParamsSchema,
@@ -19,6 +22,20 @@ import { issuerService } from "./service";
 
 export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .use(authPlugin)
+  .get(
+    "/assets",
+    ({ auth, query }) =>
+      issuerService.listOwnedAssets(requireUserRole(auth, ["investor", "issuer", "admin"]), query),
+    {
+      query: issuerAssetListQuerySchema,
+      detail: {
+        summary: "List assets owned by the current issuer",
+      },
+      response: {
+        200: issuerAssetListResponseSchema,
+      },
+    },
+  )
   .post(
     "/assets",
     ({ auth, body }) =>
@@ -30,6 +47,23 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
       },
       response: {
         200: issuerAssetResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/assets/:id",
+    ({ auth, params }) =>
+      issuerService.getOwnedAssetDetails(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+      ),
+    {
+      params: issuerActionParamsSchema,
+      detail: {
+        summary: "Get full details for an issuer-owned asset",
+      },
+      response: {
+        200: issuerAssetDetailSchema,
       },
     },
   )

@@ -82,6 +82,7 @@ export class AssetsService {
           status: assets.status,
           pricePerShareUsdc: assetSaleTerms.pricePerShareUsdc,
           expectedAnnualYieldPercent: assets.expectedAnnualYieldPercent,
+          coverImageUrl: assets.coverImageUrl,
         })
         .from(assets)
         .innerJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
@@ -106,6 +107,7 @@ export class AssetsService {
         price_per_share_usdc: toNumber(row.pricePerShareUsdc),
         expected_annual_yield_percent:
           row.expectedAnnualYieldPercent === null ? 0 : toNumber(row.expectedAnnualYieldPercent),
+        cover_image_url: row.coverImageUrl,
       })),
       pagination: {
         page: query.page,
@@ -152,6 +154,7 @@ export class AssetsService {
         row.asset.expectedAnnualYieldPercent === null
           ? null
           : toNumber(row.asset.expectedAnnualYieldPercent),
+      cover_image_url: row.asset.coverImageUrl,
       issuer: {
         id: row.issuer.id,
         display_name: row.issuer.displayName ?? "Issuer",

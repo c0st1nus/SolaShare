@@ -319,6 +319,7 @@ export const createActiveSaleAsset = async (
   await adminService.verifyAsset(admin, createdAsset.asset_id, {
     outcome: "approved",
     reason: "Approved in test fixture",
+    issues: [],
   });
   await issuerService.submitAssetForWorkflow(issuer, createdAsset.asset_id);
 

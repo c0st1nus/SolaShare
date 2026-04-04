@@ -89,6 +89,7 @@ describe("workflow integration", () => {
     const verified = await adminService.verifyAsset(admin, createdAsset.asset_id, {
       outcome: "approved",
       reason: "Integration review passed",
+      issues: [],
     });
     expect(verified.resulting_status).toBe("verified");
 

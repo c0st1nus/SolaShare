@@ -1,4 +1,4 @@
-import { and, count, countDistinct, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
 import {
@@ -21,13 +21,16 @@ import { ApiError } from "../../lib/api-error";
 import { NotificationService } from "../notifications/service";
 import type {
   adminAssetActionResponseSchema,
+  adminAssetDetailSchema,
+  adminAssetsQuerySchema,
+  adminAssetsResponseSchema,
+  adminCreateUserBodySchema,
+  adminCreateUserResponseSchema,
+  adminDeleteUserResponseSchema,
   adminKycRequestsQuerySchema,
   adminKycRequestsResponseSchema,
   adminKycReviewBodySchema,
   adminKycReviewResponseSchema,
-  adminCreateUserBodySchema,
-  adminCreateUserResponseSchema,
-  adminDeleteUserResponseSchema,
   adminUserRoleUpdateBodySchema,
   adminUserRoleUpdateResponseSchema,
   adminUsersQuerySchema,
@@ -43,6 +46,9 @@ type AdminActor = {
 
 type AdminVerifyBody = z.infer<typeof adminVerifyBodySchema>;
 type AdminAssetActionResponse = z.infer<typeof adminAssetActionResponseSchema>;
+type AdminAssetDetailResponse = z.infer<typeof adminAssetDetailSchema>;
+type AdminAssetsQuery = z.infer<typeof adminAssetsQuerySchema>;
+type AdminAssetsResponse = z.infer<typeof adminAssetsResponseSchema>;
 type AdminKycRequestsQuery = z.infer<typeof adminKycRequestsQuerySchema>;
 type AdminKycRequestsResponse = z.infer<typeof adminKycRequestsResponseSchema>;
 type AdminKycReviewBody = z.infer<typeof adminKycReviewBodySchema>;
@@ -60,11 +66,7 @@ type AuditLogsResponse = z.infer<typeof auditLogsResponseSchema>;
 const notificationsService = new NotificationService();
 
 const loadAssetOrThrow = async (assetId: string) => {
-  const [asset] = await db
-    .select()
-    .from(assets)
-    .where(eq(assets.id, assetId))
-    .limit(1);
+  const [asset] = await db.select().from(assets).where(eq(assets.id, assetId)).limit(1);
 
   if (!asset) {
     throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
@@ -74,10 +76,183 @@ const loadAssetOrThrow = async (assetId: string) => {
 };
 
 export class AdminService {
-  async listUsers(
+  async getAssetDetails(
     _currentUser: AdminActor,
-    query: AdminUsersQuery,
-  ): Promise<AdminUsersResponse> {
+    assetId: string,
+  ): Promise<AdminAssetDetailResponse> {
+    const [row, documents] = await Promise.all([
+      db
+        .select({
+          asset: assets,
+          issuer: users,
+          saleTerms: assetSaleTerms,
+        })
+        .from(assets)
+        .innerJoin(users, eq(users.id, assets.issuerUserId))
+        .leftJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
+        .where(eq(assets.id, assetId))
+        .limit(1),
+      db
+        .select()
+        .from(assetDocuments)
+        .where(eq(assetDocuments.assetId, assetId))
+        .orderBy(desc(assetDocuments.createdAt)),
+    ]);
+
+    const resolved = row[0];
+
+    if (!resolved) {
+      throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
+    }
+
+    const [reviewFeedback, revenueStats] = await Promise.all([
+      (async () => {
+        const [decision] = await db
+          .select({
+            outcome: verificationDecisions.outcome,
+            reason: verificationDecisions.reason,
+            metadataJson: verificationDecisions.metadataJson,
+            createdAt: verificationDecisions.createdAt,
+          })
+          .from(verificationDecisions)
+          .innerJoin(
+            verificationRequests,
+            eq(verificationRequests.id, verificationDecisions.verificationRequestId),
+          )
+          .where(eq(verificationRequests.assetId, assetId))
+          .orderBy(desc(verificationDecisions.createdAt))
+          .limit(1);
+
+        if (!decision || decision.outcome === "approved") {
+          return null;
+        }
+
+        return {
+          outcome: decision.outcome,
+          reason: decision.reason ?? null,
+          created_at: decision.createdAt.toISOString(),
+          issues:
+            ((decision.metadataJson ?? {}) as { issues?: AdminAssetDetailResponse["review_feedback"] extends infer T
+              ? T extends { issues: infer U }
+                ? U
+                : never
+              : never }).issues ?? [],
+        };
+      })(),
+      db
+        .select({
+          totalEpochs: count(revenueEpochs.id),
+          lastPostedEpoch: sql<number | null>`max(${revenueEpochs.epochNumber})`,
+        })
+        .from(revenueEpochs)
+        .where(eq(revenueEpochs.assetId, assetId)),
+    ]);
+
+    return {
+      id: resolved.asset.id,
+      slug: resolved.asset.slug,
+      title: resolved.asset.title,
+      short_description: resolved.asset.shortDescription,
+      full_description: resolved.asset.fullDescription,
+      energy_type: resolved.asset.energyType,
+      status: resolved.asset.status,
+      location: {
+        country: resolved.asset.locationCountry,
+        region: resolved.asset.locationRegion,
+        city: resolved.asset.locationCity,
+      },
+      capacity_kw: Number(resolved.asset.capacityKw),
+      currency: resolved.asset.currency,
+      expected_annual_yield_percent:
+        resolved.asset.expectedAnnualYieldPercent === null
+          ? null
+          : Number(resolved.asset.expectedAnnualYieldPercent),
+      cover_image_url: resolved.asset.coverImageUrl,
+      issuer: {
+        id: resolved.issuer.id,
+        display_name: resolved.issuer.displayName ?? "Issuer",
+      },
+      revenue_summary: {
+        total_epochs: revenueStats[0]?.totalEpochs ?? 0,
+        last_posted_epoch: revenueStats[0]?.lastPostedEpoch ?? null,
+      },
+      onchain_refs: {
+        onchain_asset_pubkey: resolved.asset.onchainAssetPubkey,
+        share_mint_pubkey: resolved.asset.shareMintPubkey,
+        vault_pubkey: resolved.asset.vaultPubkey,
+      },
+      sale_terms: resolved.saleTerms
+        ? {
+            valuation_usdc: resolved.saleTerms.valuationUsdc,
+            total_shares: resolved.saleTerms.totalShares,
+            price_per_share_usdc: resolved.saleTerms.pricePerShareUsdc,
+            minimum_buy_amount_usdc: resolved.saleTerms.minimumBuyAmountUsdc,
+            target_raise_usdc: resolved.saleTerms.targetRaiseUsdc,
+            sale_status: resolved.saleTerms.saleStatus,
+          }
+        : null,
+      documents: documents.map((document) => ({
+        id: document.id,
+        type: document.type,
+        title: document.title,
+        storage_provider: document.storageProvider,
+        storage_uri: document.storageUri,
+        content_hash: document.contentHash,
+        mime_type: document.mimeType,
+        is_public: document.isPublic,
+        created_at: document.createdAt.toISOString(),
+      })),
+      review_feedback: reviewFeedback,
+    };
+  }
+
+  async listAssets(
+    _currentUser: AdminActor,
+    query: AdminAssetsQuery,
+  ): Promise<AdminAssetsResponse> {
+    const whereClause = query.status ? eq(assets.status, query.status) : undefined;
+
+    const [rows, totals] = await Promise.all([
+      db
+        .select({
+          asset: assets,
+          issuerDisplayName: users.displayName,
+        })
+        .from(assets)
+        .innerJoin(users, eq(users.id, assets.issuerUserId))
+        .where(whereClause)
+        .orderBy(desc(assets.updatedAt))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      db
+        .select({ total: count(assets.id) })
+        .from(assets)
+        .where(whereClause),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.asset.id,
+        title: row.asset.title,
+        slug: row.asset.slug,
+        energy_type: row.asset.energyType,
+        capacity_kw: Number(row.asset.capacityKw),
+        status: row.asset.status,
+        issuer_display_name: row.issuerDisplayName ?? "Issuer",
+        location_country: row.asset.locationCountry,
+        location_city: row.asset.locationCity,
+        created_at: row.asset.createdAt.toISOString(),
+        updated_at: row.asset.updatedAt.toISOString(),
+      })),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total: totals[0]?.total ?? 0,
+      },
+    };
+  }
+
+  async listUsers(_currentUser: AdminActor, query: AdminUsersQuery): Promise<AdminUsersResponse> {
     const whereClause = and(
       query.role ? eq(users.role, query.role) : undefined,
       query.status ? eq(users.status, query.status) : undefined,
@@ -122,12 +297,7 @@ export class AdminService {
         email: string | null;
         role: "investor" | "issuer" | "admin";
         status: "active" | "blocked";
-        kyc_status:
-          | "not_started"
-          | "pending"
-          | "approved"
-          | "rejected"
-          | "needs_changes";
+        kyc_status: "not_started" | "pending" | "approved" | "rejected" | "needs_changes";
         auth_providers: Array<"password" | "google" | "telegram">;
         created_at: string;
       }
@@ -181,11 +351,7 @@ export class AdminService {
       .limit(1);
 
     if (existingIdentity) {
-      throw new ApiError(
-        409,
-        "EMAIL_ALREADY_REGISTERED",
-        "Email address is already registered",
-      );
+      throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "Email address is already registered");
     }
 
     const passwordHash = await Bun.password.hash(input.password, {
@@ -242,11 +408,7 @@ export class AdminService {
     userId: string,
     input: AdminUserRoleUpdateBody,
   ): Promise<AdminUserRoleUpdateResponse> {
-    const [targetUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [targetUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!targetUser) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -312,26 +474,15 @@ export class AdminService {
     };
   }
 
-  async deleteUser(
-    currentUser: AdminActor,
-    userId: string,
-  ): Promise<AdminDeleteUserResponse> {
-    const [targetUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+  async deleteUser(currentUser: AdminActor, userId: string): Promise<AdminDeleteUserResponse> {
+    const [targetUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!targetUser) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
     }
 
     if (currentUser.id === userId) {
-      throw new ApiError(
-        409,
-        "SELF_DELETE_FORBIDDEN",
-        "Admins cannot delete their own account",
-      );
+      throw new ApiError(409, "SELF_DELETE_FORBIDDEN", "Admins cannot delete their own account");
     }
 
     if (targetUser.role === "admin") {
@@ -503,11 +654,7 @@ export class AdminService {
     userId: string,
     input: AdminKycReviewBody,
   ): Promise<AdminKycReviewResponse> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -548,8 +695,7 @@ export class AdminService {
       await tx
         .update(verificationRequests)
         .set({
-          status:
-            input.outcome === "needs_changes" ? "rejected" : input.outcome,
+          status: input.outcome === "needs_changes" ? "rejected" : input.outcome,
           resolvedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -592,10 +738,7 @@ export class AdminService {
       .select()
       .from(verificationRequests)
       .where(
-        and(
-          eq(verificationRequests.assetId, assetId),
-          eq(verificationRequests.status, "pending"),
-        ),
+        and(eq(verificationRequests.assetId, assetId), eq(verificationRequests.status, "pending")),
       )
       .orderBy(desc(verificationRequests.createdAt))
       .limit(1);
@@ -609,8 +752,9 @@ export class AdminService {
     }
 
     const resultingStatus = input.outcome === "approved" ? "verified" : "draft";
-    const verificationRequestStatus =
-      input.outcome === "approved" ? "approved" : "rejected";
+    const verificationRequestStatus = input.outcome === "approved" ? "approved" : "rejected";
+    const normalizedReason = input.reason?.trim() || null;
+    const issues = input.issues ?? [];
 
     await db.transaction(async (tx) => {
       await tx
@@ -626,7 +770,7 @@ export class AdminService {
         oldStatus: asset.status,
         newStatus: resultingStatus,
         changedByUserId: currentUser.id,
-        reason: input.reason ?? `Admin verification outcome: ${input.outcome}`,
+        reason: normalizedReason ?? `Admin verification outcome: ${input.outcome}`,
       });
 
       await tx
@@ -642,7 +786,10 @@ export class AdminService {
         verificationRequestId: verificationRequest.id,
         decidedByUserId: currentUser.id,
         outcome: input.outcome,
-        reason: input.reason ?? null,
+        reason: normalizedReason,
+        metadataJson: {
+          issues,
+        },
       });
 
       await tx.insert(auditLogs).values({
@@ -653,7 +800,8 @@ export class AdminService {
         payloadJson: {
           previous_status: asset.status,
           resulting_status: resultingStatus,
-          reason: input.reason ?? null,
+          reason: normalizedReason,
+          issues,
         },
       });
 
@@ -676,10 +824,7 @@ export class AdminService {
     };
   }
 
-  async freezeAsset(
-    currentUser: AdminActor,
-    assetId: string,
-  ): Promise<AdminAssetActionResponse> {
+  async freezeAsset(currentUser: AdminActor, assetId: string): Promise<AdminAssetActionResponse> {
     const asset = await loadAssetOrThrow(assetId);
 
     await db.transaction(async (tx) => {
@@ -731,10 +876,7 @@ export class AdminService {
     };
   }
 
-  async closeAsset(
-    currentUser: AdminActor,
-    assetId: string,
-  ): Promise<AdminAssetActionResponse> {
+  async closeAsset(currentUser: AdminActor, assetId: string): Promise<AdminAssetActionResponse> {
     const asset = await loadAssetOrThrow(assetId);
 
     await db.transaction(async (tx) => {
@@ -777,10 +919,7 @@ export class AdminService {
     };
   }
 
-  async listAuditLogs(
-    _currentUser: AdminActor,
-    query: AuditLogsQuery,
-  ): Promise<AuditLogsResponse> {
+  async listAuditLogs(_currentUser: AdminActor, query: AuditLogsQuery): Promise<AuditLogsResponse> {
     const filters = [];
 
     if (query.entity_type) {
@@ -792,11 +931,7 @@ export class AdminService {
     }
 
     const whereClause =
-      filters.length === 0
-        ? undefined
-        : filters.length === 1
-          ? filters[0]
-          : and(...filters);
+      filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters);
 
     const [rows, totals] = await Promise.all([
       db

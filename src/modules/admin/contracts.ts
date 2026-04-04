@@ -1,25 +1,90 @@
 import { z } from "zod";
-import { idParamSchema, uuidSchema } from "../shared/contracts";
+import { kycDocumentTypeSchema } from "../me/contracts";
 import {
+  idParamSchema,
+  isoDateTimeSchema,
+  paginationMetaSchema,
+  paginationQuerySchema,
+  uuidSchema,
+} from "../shared/contracts";
+import {
+  assetStatusSchema,
+  energyTypeSchema,
   kycStatusSchema,
   userRoleSchema,
   verificationDecisionOutcomeSchema,
   verificationRequestStatusSchema,
 } from "../shared/domain";
-import { kycDocumentTypeSchema } from "../me/contracts";
+import { issuerAssetDetailSchema } from "../issuer/contracts";
 
 export const adminAssetActionParamsSchema = idParamSchema;
 
-export const adminVerifyBodySchema = z.object({
-  outcome: verificationDecisionOutcomeSchema,
-  reason: z.string().optional(),
+export const adminAssetIssueSchema = z.object({
+  field: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(160).optional(),
+  note: z.string().trim().min(1).max(2000),
+  expected_value: z.string().trim().min(1).max(500).optional(),
+  actual_value: z.string().trim().min(1).max(500).optional(),
+  document_type: z
+    .enum([
+      "ownership_doc",
+      "right_to_income_doc",
+      "technical_passport",
+      "photo",
+      "meter_info",
+      "financial_model",
+      "revenue_report",
+      "other",
+    ])
+    .optional(),
 });
+
+export const adminVerifyBodySchema = z
+  .object({
+    outcome: verificationDecisionOutcomeSchema,
+    reason: z.string().trim().max(2000).optional(),
+    issues: z.array(adminAssetIssueSchema).max(20).default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.outcome !== "approved" && !value.reason?.trim() && value.issues.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reason"],
+        message: "Reason or issues are required when review is not approved",
+      });
+    }
+  });
 
 export const adminAssetActionResponseSchema = z.object({
   success: z.literal(true),
   asset_id: uuidSchema,
   resulting_status: z.string(),
 });
+
+export const adminAssetsQuerySchema = paginationQuerySchema.extend({
+  status: assetStatusSchema.optional(),
+});
+
+export const adminAssetsResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: uuidSchema,
+      title: z.string(),
+      slug: z.string(),
+      energy_type: energyTypeSchema,
+      capacity_kw: z.number(),
+      status: assetStatusSchema,
+      issuer_display_name: z.string(),
+      location_country: z.string(),
+      location_city: z.string().nullable(),
+      created_at: isoDateTimeSchema,
+      updated_at: isoDateTimeSchema,
+    }),
+  ),
+  pagination: paginationMetaSchema,
+});
+
+export const adminAssetDetailSchema = issuerAssetDetailSchema;
 
 export const adminUserActionParamsSchema = idParamSchema;
 

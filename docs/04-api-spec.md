@@ -138,11 +138,14 @@ Responses generally follow one of these shapes:
 | `POST /me/kyc/cancel` | Authenticated user | cancel the latest pending KYC submission |
 | `POST /uploads/presign` | Authenticated user | create short-lived upload URL for private document uploads |
 | `PUT /uploads/direct` | Upload token holder | upload raw file bytes for a previously presigned target |
+| `GET /issuer/assets` | Authenticated issuer | list current issuer assets including drafts and review returns |
+| `GET /issuer/assets/:id` | Authenticated issuer | full issuer-owned asset detail with private docs and review feedback |
 | `POST /issuer/*` | Authenticated user | current user must own target asset |
 | `GET /me/*` | Authenticated user | current user read models |
-| `POST /investments/*` | Authenticated investor | active sale only, `prepare` requires approved KYC |
+| `POST /investments/*` | Authenticated user | active sale only, `prepare` requires approved KYC and wallet binding |
 | `POST /claims/prepare` | Authenticated investor | only for claimable revenue |
 | `POST /transactions/confirm` | Authenticated user or internal flow | post-signature sync |
+| `GET /admin/assets` | Authenticated admin | list all assets for moderation and operations |
 | `POST /admin/users/:id/kyc-review` | Authenticated admin | approve or reject investor KYC |
 | `POST /admin/*` | Authenticated admin | strongly protected |
 | `GET /admin/audit-logs` | Authenticated admin | operational visibility |
@@ -802,6 +805,28 @@ Access:
 
 ---
 
+## GET /issuer/assets
+
+Lists assets owned by the current issuer, including drafts and assets returned from review.
+
+### Response notes
+
+- includes sale-term summary when pricing exists
+- includes draft assets that are not visible in the public catalog
+
+---
+
+## GET /issuer/assets/:id
+
+Returns the full issuer-owned asset detail.
+
+### Response notes
+
+- returns all asset documents, not only public ones
+- returns latest admin review feedback when outcome is `rejected` or `needs_changes`
+
+---
+
 ## PATCH /issuer/assets/:id
 
 Updates an asset draft or editable asset fields.
@@ -839,12 +864,19 @@ Access:
 {
   "type": "technical_passport",
   "title": "Technical passport",
-  "storage_provider": "arweave",
+  "storage_provider": "s3",
   "storage_uri": "https://...",
   "content_hash": "hash",
+  "mime_type": "application/pdf",
   "is_public": true
 }
 ```
+
+Typical frontend flow:
+
+1. call `POST /uploads/presign` with `purpose: "asset_document"`
+2. upload the raw file bytes to `PUT /uploads/direct`
+3. send the returned `file_url` and `content_hash` to this endpoint
 
 ### Response
 
@@ -870,12 +902,17 @@ Access:
 ```json
 {
   "valuation_usdc": 100000,
-  "total_shares": 10000,
-  "price_per_share_usdc": 10,
-  "minimum_buy_amount_usdc": 50,
-  "target_raise_usdc": 50000
+  "minimum_buy_amount_usdc": 50
 }
 ```
+
+Optional advanced fields still supported:
+
+- `total_shares`
+- `price_per_share_usdc`
+- `target_raise_usdc`
+
+If omitted, the backend derives them from asset capacity and valuation.
 
 ### Response
 
@@ -945,6 +982,14 @@ Access:
   "revenue_epoch_id": "epoch-uuid"
 }
 ```
+
+### Frontend notes
+
+- the issuer UI should upload the revenue report file through `POST /uploads/presign` first
+- `report_uri` should point to the backend-served uploaded file URL, not an external third-party link
+- `report_hash` should come from the upload completion response, not from manual input
+- initial revenue evidence may also be attached during asset creation as an `asset_document` with type `revenue_report`
+- asset creation may also send `cover_image_url`, which should point to an uploaded image stored through the same backend upload flow
 
 ---
 
@@ -1081,7 +1126,7 @@ Access:
 
 ```json
 {
-  "purpose": "kyc_document",
+  "purpose": "asset_document",
   "file_name": "passport.pdf",
   "content_type": "application/pdf",
   "size_bytes": 482331
@@ -1101,9 +1146,10 @@ Access:
 
 ### Frontend notes
 
-- call this before uploading a KYC file
+- supported `purpose` values include `kyc_document`, `avatar_image`, and `asset_document`
+- current file size limits are `10 MB` for `kyc_document`, `10 MB` for `avatar_image`, and `50 MB` for `asset_document`
 - upload the raw file bytes to `upload_url` using the returned HTTP method
-- after upload succeeds, pass the returned `file_url` into `POST /me/kyc/submit`
+- after upload succeeds, pass the returned `file_url` into the corresponding document-registration endpoint
 - uploaded objects are stored in private S3-compatible storage behind the backend file route
 
 ---
@@ -1257,7 +1303,7 @@ Returns quote for a buy action.
 
 Access:
 
-- authenticated investor
+- authenticated user
 
 ### Request
 
@@ -1292,7 +1338,7 @@ Prepares a transaction or signing payload for investment.
 
 Access:
 
-- authenticated investor
+- authenticated user
 
 ### Request
 
@@ -1396,6 +1442,17 @@ Access:
 
 ## Admin Endpoints
 
+## GET /admin/assets
+
+Lists all assets for moderation and operational actions.
+
+### Response notes
+
+- includes pending review assets that are not public
+- includes issuer display name and location summary for moderation queues
+
+---
+
 ## POST /admin/assets/:id/verify
 
 Marks asset as verified or triggers associated verified flow.
@@ -1410,6 +1467,25 @@ Access:
 {
   "outcome": "approved",
   "reason": "All documents verified"
+}
+```
+
+For `rejected` or `needs_changes`, admins may include structured review issues:
+
+```json
+{
+  "outcome": "needs_changes",
+  "reason": "Financial data does not match the technical passport",
+  "issues": [
+    {
+      "field": "valuation_usdc",
+      "label": "Asset valuation",
+      "note": "Passport value differs from submitted price",
+      "actual_value": "100000 USDC",
+      "expected_value": "95000 USDC",
+      "document_type": "technical_passport"
+    }
+  ]
 }
 ```
 

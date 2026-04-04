@@ -29,6 +29,7 @@ export const assetCardSchema = z.object({
   status: assetStatusSchema,
   price_per_share_usdc: z.number(),
   expected_annual_yield_percent: z.number(),
+  cover_image_url: z.string().url().nullable(),
 });
 
 export const assetsListResponseSchema = z.object({
@@ -81,6 +82,7 @@ export const assetDetailSchema = z.object({
   capacity_kw: z.number(),
   currency: z.string(),
   expected_annual_yield_percent: z.number().nullable(),
+  cover_image_url: z.string().url().nullable(),
   issuer: z.object({
     id: uuidSchema,
     display_name: z.string(),

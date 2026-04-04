@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
 import {
@@ -8,6 +8,8 @@ import {
   assets,
   auditLogs,
   revenueEpochs,
+  users,
+  verificationDecisions,
   verificationRequests,
   walletBindings,
 } from "../../db/schema";
@@ -16,9 +18,13 @@ import { prepareRevenuePostTransaction } from "../../lib/solana";
 import { toMoneyString, toNumber } from "../shared/utils";
 import type {
   issuerAssetBodySchema,
+  issuerAssetDetailSchema,
   issuerAssetDocumentBodySchema,
   issuerAssetDocumentResponseSchema,
+  issuerAssetListQuerySchema,
+  issuerAssetListResponseSchema,
   issuerAssetResponseSchema,
+  issuerAssetReviewFeedbackSchema,
   issuerAssetUpdateBodySchema,
   issuerSubmitResponseSchema,
   revenueEpochBodySchema,
@@ -31,8 +37,12 @@ import type {
 type IssuerAssetBody = z.infer<typeof issuerAssetBodySchema>;
 type IssuerAssetResponse = z.infer<typeof issuerAssetResponseSchema>;
 type IssuerAssetUpdateBody = z.infer<typeof issuerAssetUpdateBodySchema>;
+type IssuerAssetListQuery = z.infer<typeof issuerAssetListQuerySchema>;
+type IssuerAssetListResponse = z.infer<typeof issuerAssetListResponseSchema>;
+type IssuerAssetDetailResponse = z.infer<typeof issuerAssetDetailSchema>;
 type IssuerAssetDocumentBody = z.infer<typeof issuerAssetDocumentBodySchema>;
 type IssuerAssetDocumentResponse = z.infer<typeof issuerAssetDocumentResponseSchema>;
+type IssuerAssetReviewFeedback = z.infer<typeof issuerAssetReviewFeedbackSchema>;
 type SaleTermsBody = z.infer<typeof saleTermsBodySchema>;
 type SaleTermsResponse = z.infer<typeof saleTermsResponseSchema>;
 type IssuerSubmitResponse = z.infer<typeof issuerSubmitResponseSchema>;
@@ -43,6 +53,8 @@ type RevenuePostResponse = z.infer<typeof revenuePostResponseSchema>;
 type IssuerActor = {
   id: string;
 };
+
+const SHARES_PER_KW = 100;
 
 const slugify = (value: string) =>
   value
@@ -80,6 +92,44 @@ const assertEditableDraft = async (assetId: string, issuerUserId: string) => {
   return asset;
 };
 
+const deriveTotalShares = (capacityKw: number) =>
+  Math.max(100, Math.round(capacityKw * SHARES_PER_KW));
+
+const loadLatestReviewFeedback = async (
+  assetId: string,
+): Promise<IssuerAssetReviewFeedback | null> => {
+  const [row] = await db
+    .select({
+      outcome: verificationDecisions.outcome,
+      reason: verificationDecisions.reason,
+      metadataJson: verificationDecisions.metadataJson,
+      createdAt: verificationDecisions.createdAt,
+    })
+    .from(verificationDecisions)
+    .innerJoin(
+      verificationRequests,
+      eq(verificationRequests.id, verificationDecisions.verificationRequestId),
+    )
+    .where(eq(verificationRequests.assetId, assetId))
+    .orderBy(desc(verificationDecisions.createdAt))
+    .limit(1);
+
+  if (!row || row.outcome === "approved") {
+    return null;
+  }
+
+  const metadata = (row.metadataJson ?? {}) as {
+    issues?: IssuerAssetReviewFeedback["issues"];
+  };
+
+  return {
+    outcome: row.outcome,
+    reason: row.reason ?? null,
+    created_at: row.createdAt.toISOString(),
+    issues: metadata.issues ?? [],
+  };
+};
+
 export class IssuerService {
   async createAssetDraft(
     currentUser: IssuerActor,
@@ -96,6 +146,7 @@ export class IssuerService {
         shortDescription: input.short_description,
         fullDescription: input.full_description,
         energyType: input.energy_type,
+        coverImageUrl: input.cover_image_url ?? null,
         issuerUserId: currentUser.id,
         locationCountry: input.location_country,
         locationRegion: input.location_region ?? null,
@@ -150,6 +201,7 @@ export class IssuerService {
           ...(input.short_description ? { shortDescription: input.short_description } : {}),
           ...(input.full_description ? { fullDescription: input.full_description } : {}),
           ...(input.energy_type ? { energyType: input.energy_type } : {}),
+          ...(input.cover_image_url !== undefined ? { coverImageUrl: input.cover_image_url } : {}),
           ...(input.location_country ? { locationCountry: input.location_country } : {}),
           ...(input.location_region !== undefined
             ? { locationRegion: input.location_region ?? null }
@@ -177,6 +229,145 @@ export class IssuerService {
     };
   }
 
+  async listOwnedAssets(
+    currentUser: IssuerActor,
+    query: IssuerAssetListQuery,
+  ): Promise<IssuerAssetListResponse> {
+    const whereClause = and(
+      eq(assets.issuerUserId, currentUser.id),
+      query.status ? eq(assets.status, query.status) : undefined,
+    );
+
+    const [rows, totals] = await Promise.all([
+      db
+        .select({
+          asset: assets,
+          saleTerms: assetSaleTerms,
+        })
+        .from(assets)
+        .leftJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
+        .where(whereClause)
+        .orderBy(desc(assets.updatedAt))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      db
+        .select({ total: count(assets.id) })
+        .from(assets)
+        .where(whereClause),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.asset.id,
+        slug: row.asset.slug,
+        title: row.asset.title,
+        energy_type: row.asset.energyType,
+        capacity_kw: toNumber(row.asset.capacityKw),
+        status: row.asset.status,
+        location_city: row.asset.locationCity,
+        location_country: row.asset.locationCountry,
+        price_per_share_usdc: row.saleTerms ? toNumber(row.saleTerms.pricePerShareUsdc) : null,
+        valuation_usdc: row.saleTerms ? toNumber(row.saleTerms.valuationUsdc) : null,
+        total_shares: row.saleTerms?.totalShares ?? null,
+        created_at: row.asset.createdAt.toISOString(),
+        updated_at: row.asset.updatedAt.toISOString(),
+      })),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total: totals[0]?.total ?? 0,
+      },
+    };
+  }
+
+  async getOwnedAssetDetails(
+    currentUser: IssuerActor,
+    assetId: string,
+  ): Promise<IssuerAssetDetailResponse> {
+    const [row, documents, reviewFeedback] = await Promise.all([
+      db
+        .select({
+          asset: assets,
+          issuer: users,
+          saleTerms: assetSaleTerms,
+        })
+        .from(assets)
+        .innerJoin(users, eq(users.id, assets.issuerUserId))
+        .leftJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
+        .where(and(eq(assets.id, assetId), eq(assets.issuerUserId, currentUser.id)))
+        .limit(1),
+      db
+        .select()
+        .from(assetDocuments)
+        .where(eq(assetDocuments.assetId, assetId))
+        .orderBy(desc(assetDocuments.createdAt)),
+      loadLatestReviewFeedback(assetId),
+    ]);
+
+    const resolved = row[0];
+
+    if (!resolved) {
+      throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
+    }
+
+    return {
+      id: resolved.asset.id,
+      slug: resolved.asset.slug,
+      title: resolved.asset.title,
+      short_description: resolved.asset.shortDescription,
+      full_description: resolved.asset.fullDescription,
+      energy_type: resolved.asset.energyType,
+      status: resolved.asset.status,
+      location: {
+        country: resolved.asset.locationCountry,
+        region: resolved.asset.locationRegion,
+        city: resolved.asset.locationCity,
+      },
+      capacity_kw: toNumber(resolved.asset.capacityKw),
+      currency: resolved.asset.currency,
+      expected_annual_yield_percent:
+        resolved.asset.expectedAnnualYieldPercent === null
+          ? null
+          : toNumber(resolved.asset.expectedAnnualYieldPercent),
+      cover_image_url: resolved.asset.coverImageUrl,
+      issuer: {
+        id: resolved.issuer.id,
+        display_name: resolved.issuer.displayName ?? "Issuer",
+      },
+      revenue_summary: {
+        total_epochs: 0,
+        last_posted_epoch: null,
+      },
+      onchain_refs: {
+        onchain_asset_pubkey: resolved.asset.onchainAssetPubkey,
+        share_mint_pubkey: resolved.asset.shareMintPubkey,
+        vault_pubkey: resolved.asset.vaultPubkey,
+      },
+      sale_terms: resolved.saleTerms
+        ? {
+            valuation_usdc: resolved.saleTerms.valuationUsdc,
+            total_shares: resolved.saleTerms.totalShares,
+            price_per_share_usdc: resolved.saleTerms.pricePerShareUsdc,
+            minimum_buy_amount_usdc: resolved.saleTerms.minimumBuyAmountUsdc,
+            target_raise_usdc: resolved.saleTerms.targetRaiseUsdc,
+            sale_status: resolved.saleTerms.saleStatus,
+          }
+        : null,
+      documents: documents.map((document) => ({
+        id: document.id,
+        type: document.type,
+        title: document.title,
+        storage_provider: document.storageProvider,
+        storage_uri: document.storageUri,
+        content_hash: document.contentHash,
+        mime_type: document.mimeType,
+        is_public: document.isPublic,
+        created_at: document.createdAt.toISOString(),
+      })),
+      review_feedback: reviewFeedback,
+    };
+  }
+
   async registerAssetDocument(
     currentUser: IssuerActor,
     assetId: string,
@@ -195,6 +386,7 @@ export class IssuerService {
         storageProvider: input.storage_provider,
         storageUri: input.storage_uri,
         contentHash: input.content_hash,
+        mimeType: input.mime_type ?? null,
         uploadedByUserId: currentUser.id,
         isPublic: input.is_public,
       });
@@ -222,12 +414,17 @@ export class IssuerService {
     assetId: string,
     input: SaleTermsBody,
   ): Promise<SaleTermsResponse> {
-    await assertEditableDraft(assetId, currentUser.id);
+    const asset = await assertEditableDraft(assetId, currentUser.id);
     const [existingSaleTerms] = await db
       .select()
       .from(assetSaleTerms)
       .where(eq(assetSaleTerms.assetId, assetId))
       .limit(1);
+
+    const capacityKw = toNumber(asset.capacityKw);
+    const totalShares = input.total_shares ?? deriveTotalShares(capacityKw);
+    const pricePerShareUsdc = input.price_per_share_usdc ?? input.valuation_usdc / totalShares;
+    const targetRaiseUsdc = input.target_raise_usdc ?? input.valuation_usdc;
 
     await db.transaction(async (tx) => {
       if (existingSaleTerms) {
@@ -235,10 +432,10 @@ export class IssuerService {
           .update(assetSaleTerms)
           .set({
             valuationUsdc: input.valuation_usdc.toFixed(6),
-            totalShares: input.total_shares,
-            pricePerShareUsdc: input.price_per_share_usdc.toFixed(6),
+            totalShares,
+            pricePerShareUsdc: pricePerShareUsdc.toFixed(6),
             minimumBuyAmountUsdc: input.minimum_buy_amount_usdc.toFixed(6),
-            targetRaiseUsdc: input.target_raise_usdc.toFixed(6),
+            targetRaiseUsdc: targetRaiseUsdc.toFixed(6),
             updatedAt: new Date(),
           })
           .where(eq(assetSaleTerms.assetId, assetId));
@@ -246,10 +443,10 @@ export class IssuerService {
         await tx.insert(assetSaleTerms).values({
           assetId,
           valuationUsdc: input.valuation_usdc.toFixed(6),
-          totalShares: input.total_shares,
-          pricePerShareUsdc: input.price_per_share_usdc.toFixed(6),
+          totalShares,
+          pricePerShareUsdc: pricePerShareUsdc.toFixed(6),
           minimumBuyAmountUsdc: input.minimum_buy_amount_usdc.toFixed(6),
-          targetRaiseUsdc: input.target_raise_usdc.toFixed(6),
+          targetRaiseUsdc: targetRaiseUsdc.toFixed(6),
         });
       }
 
@@ -258,7 +455,13 @@ export class IssuerService {
         entityType: "asset_sale_terms",
         entityId: assetId,
         action: "asset.sale_terms_saved",
-        payloadJson: input,
+        payloadJson: {
+          ...input,
+          total_shares: totalShares,
+          price_per_share_usdc: pricePerShareUsdc,
+          target_raise_usdc: targetRaiseUsdc,
+          derived_from_capacity_kw: capacityKw,
+        },
       });
     });
 

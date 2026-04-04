@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { authPlugin, requireUserRole } from "../../plugins/auth";
+import { authPlugin, requireAuthenticatedUser } from "../../plugins/auth";
 import {
   investmentPrepareResponseSchema,
   investmentQuoteBodySchema,
@@ -15,7 +15,7 @@ export const investmentsRoutes = new Elysia({
   .post(
     "/quote",
     ({ auth, body }) =>
-      investmentsService.getQuote(requireUserRole(auth, ["investor", "admin"]), body),
+      investmentsService.getQuote(requireAuthenticatedUser(auth), body),
     {
       body: investmentQuoteBodySchema,
       detail: {
@@ -29,7 +29,7 @@ export const investmentsRoutes = new Elysia({
   .post(
     "/prepare",
     ({ auth, body }) =>
-      investmentsService.prepareInvestment(requireUserRole(auth, ["investor", "admin"]), body),
+      investmentsService.prepareInvestment(requireAuthenticatedUser(auth), body),
     {
       body: investmentQuoteBodySchema,
       detail: {

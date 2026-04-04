@@ -1,9 +1,4 @@
-import {
-  createHash,
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import type { z } from "zod";
 import { env } from "../../config/env";
@@ -19,7 +14,7 @@ type PresignUploadResponse = z.infer<typeof presignUploadResponseSchema>;
 type DirectUploadResponse = z.infer<typeof directUploadResponseSchema>;
 
 type UploadTokenPayload = {
-  purpose: "kyc_document" | "avatar_image";
+  purpose: "kyc_document" | "avatar_image" | "asset_document";
   userId: string;
   storedName: string;
   contentType: string;
@@ -29,10 +24,8 @@ type UploadTokenPayload = {
 
 const emptyPayloadHash = createHash("sha256").update("").digest("hex");
 
-const toBase64Url = (value: string) =>
-  Buffer.from(value, "utf8").toString("base64url");
-const fromBase64Url = (value: string) =>
-  Buffer.from(value, "base64url").toString("utf8");
+const toBase64Url = (value: string) => Buffer.from(value, "utf8").toString("base64url");
+const fromBase64Url = (value: string) => Buffer.from(value, "base64url").toString("utf8");
 
 const signUploadToken = (payload: string) =>
   createHmac("sha256", env.JWT_SECRET).update(payload).digest("base64url");
@@ -45,8 +38,7 @@ const sanitizeFileName = (fileName: string) =>
     .replace(/^-|-$/g, "")
     .slice(0, 120) || "document";
 
-const buildAbsoluteUrl = (origin: string, pathname: string) =>
-  new URL(pathname, origin).toString();
+const buildAbsoluteUrl = (origin: string, pathname: string) => new URL(pathname, origin).toString();
 
 const safeCompare = (left: string, right: string) => {
   const leftBuffer = Buffer.from(left);
@@ -72,9 +64,7 @@ const parseUploadToken = (token: string): UploadTokenPayload => {
     throw new ApiError(400, "INVALID_UPLOAD_TOKEN", "Upload token is invalid");
   }
 
-  const parsedPayload = JSON.parse(
-    fromBase64Url(encodedPayload),
-  ) as UploadTokenPayload;
+  const parsedPayload = JSON.parse(fromBase64Url(encodedPayload)) as UploadTokenPayload;
 
   if (parsedPayload.exp < Date.now()) {
     throw new ApiError(410, "UPLOAD_TOKEN_EXPIRED", "Upload token has expired");
@@ -83,8 +73,7 @@ const parseUploadToken = (token: string): UploadTokenPayload => {
   return parsedPayload;
 };
 
-const sha256Hex = (value: string | Uint8Array) =>
-  createHash("sha256").update(value).digest("hex");
+const sha256Hex = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 const hmac = (key: string | Uint8Array, value: string) =>
   createHmac("sha256", key).update(value).digest();
@@ -102,10 +91,8 @@ const encodeUriPath = (input: string) =>
     .map((segment) => encodeURIComponent(segment))
     .join("/");
 
-const buildS3ObjectKey = (
-  purpose: UploadTokenPayload["purpose"],
-  storedName: string,
-) => `${purpose}/${storedName}`;
+const buildS3ObjectKey = (purpose: UploadTokenPayload["purpose"], storedName: string) =>
+  `${purpose}/${storedName}`;
 
 const buildS3Url = (objectKey: string) => {
   const baseUrl = new URL(env.S3_ENDPOINT);
@@ -180,11 +167,7 @@ const buildAuthorizationHeaders = ({
   return headers;
 };
 
-async function putObjectToS3(
-  objectKey: string,
-  body: Uint8Array,
-  contentType: string,
-) {
+async function putObjectToS3(objectKey: string, body: Uint8Array, contentType: string) {
   const url = buildS3Url(objectKey);
   const payloadHash = sha256Hex(body);
   const headers = buildAuthorizationHeaders({
@@ -201,11 +184,7 @@ async function putObjectToS3(
   });
 
   if (!response.ok) {
-    throw new ApiError(
-      502,
-      "STORAGE_UPLOAD_FAILED",
-      "Failed to upload file to S3 storage",
-    );
+    throw new ApiError(502, "STORAGE_UPLOAD_FAILED", "Failed to upload file to S3 storage");
   }
 }
 
@@ -227,11 +206,7 @@ async function getObjectFromS3(objectKey: string) {
   }
 
   if (!response.ok) {
-    throw new ApiError(
-      502,
-      "STORAGE_FETCH_FAILED",
-      "Failed to fetch file from S3 storage",
-    );
+    throw new ApiError(502, "STORAGE_FETCH_FAILED", "Failed to fetch file from S3 storage");
   }
 
   return response;
@@ -243,9 +218,7 @@ export class UploadsService {
     userId: string,
     input: PresignUploadBody,
   ): Promise<PresignUploadResponse> {
-    const storedName = `${randomBytes(8).toString("hex")}-${sanitizeFileName(
-      input.file_name,
-    )}`;
+    const storedName = `${randomBytes(8).toString("hex")}-${sanitizeFileName(input.file_name)}`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const payload: UploadTokenPayload = {
       purpose: input.purpose,
@@ -260,29 +233,16 @@ export class UploadsService {
     const token = `${encodedPayload}.${signUploadToken(encodedPayload)}`;
 
     return {
-      upload_url: buildAbsoluteUrl(
-        origin,
-        `/api/v1/uploads/direct?token=${token}`,
-      ),
-      file_url: buildAbsoluteUrl(
-        origin,
-        `/api/v1/uploads/files/${input.purpose}/${storedName}`,
-      ),
+      upload_url: buildAbsoluteUrl(origin, `/api/v1/uploads/direct?token=${token}`),
+      file_url: buildAbsoluteUrl(origin, `/api/v1/uploads/files/${input.purpose}/${storedName}`),
       upload_method: "PUT",
       expires_at: expiresAt.toISOString(),
     };
   }
 
-  async upload(
-    token: string,
-    origin: string,
-    request: Request,
-  ): Promise<DirectUploadResponse> {
+  async upload(token: string, origin: string, request: Request): Promise<DirectUploadResponse> {
     const payload = parseUploadToken(token);
-    const contentType = request.headers
-      .get("content-type")
-      ?.split(";")[0]
-      ?.trim();
+    const contentType = request.headers.get("content-type")?.split(";")[0]?.trim();
 
     if (contentType && contentType !== payload.contentType) {
       throw new ApiError(
@@ -299,11 +259,7 @@ export class UploadsService {
     }
 
     if (body.byteLength > payload.sizeBytes) {
-      throw new ApiError(
-        413,
-        "UPLOAD_TOO_LARGE",
-        "Uploaded file exceeds the declared size",
-      );
+      throw new ApiError(413, "UPLOAD_TOO_LARGE", "Uploaded file exceeds the declared size");
     }
 
     const objectKey = buildS3ObjectKey(payload.purpose, payload.storedName);
@@ -329,8 +285,7 @@ export class UploadsService {
 
     return new Response(body, {
       headers: {
-        "content-type":
-          response.headers.get("content-type") ?? "application/octet-stream",
+        "content-type": response.headers.get("content-type") ?? "application/octet-stream",
         "cache-control": "private, max-age=300",
       },
     });

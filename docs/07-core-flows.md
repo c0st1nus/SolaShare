@@ -59,8 +59,12 @@ An issuer creates a new green energy asset and prepares it for tokenized offerin
    - energy type
    - capacity
    - location
-4. issuer uploads supporting documents
+4. issuer uploads one or more supporting documents directly from the creation UI
+   - files are uploaded to S3-compatible storage
+   - backend registers document rows with generated URI and content hash
 5. issuer configures sale terms
+   - issuer enters valuation and minimum investment
+   - backend derives share count, share price, and raise target from capacity and valuation
 6. system generates asset metadata URI / proof bundle reference
 7. issuer submits asset to next lifecycle step
 8. if protocol design requires, on-chain asset account is created

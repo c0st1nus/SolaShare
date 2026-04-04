@@ -1,3 +1,4 @@
+import { PublicKey } from "@solana/web3.js";
 import { z } from "zod";
 import { successResponseSchema, uuidSchema } from "../shared/contracts";
 import { kycStatusSchema, userRoleSchema } from "../shared/domain";
@@ -30,6 +31,15 @@ export const googleAuthBodySchema = z.object({
   code: z.string().min(1),
   redirect_uri: z.string().url().optional(),
 });
+
+const solanaWalletAddressSchema = z.string().refine((value) => {
+  try {
+    new PublicKey(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "wallet_address must be a valid Solana public key");
 
 export const telegramLoginBodySchema = z.object({
   id: z.union([z.string(), z.number()]).transform((value) => String(value)),
@@ -76,14 +86,14 @@ export const googleAuthUrlResponseSchema = z.object({
 });
 
 export const walletLinkBodySchema = z.object({
-  wallet_address: z.string().min(32),
+  wallet_address: solanaWalletAddressSchema,
   signed_message: z.string().min(1),
 });
 
 export const walletLinkResponseSchema = successResponseSchema;
 
 export const walletChallengeRequestBodySchema = z.object({
-  wallet_address: z.string().min(32).max(64),
+  wallet_address: solanaWalletAddressSchema,
 });
 
 export const walletChallengeResponseSchema = z.object({
@@ -93,7 +103,7 @@ export const walletChallengeResponseSchema = z.object({
 });
 
 export const walletVerifyBodySchema = z.object({
-  wallet_address: z.string().min(32).max(64),
+  wallet_address: solanaWalletAddressSchema,
   challenge: z.string().min(1),
   signature: z.string().min(1),
 });
