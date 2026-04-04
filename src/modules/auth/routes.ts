@@ -12,8 +12,12 @@ import {
   registerBodySchema,
   telegramLoginBodySchema,
   telegramMiniAppBodySchema,
+  walletChallengeRequestBodySchema,
+  walletChallengeResponseSchema,
   walletLinkBodySchema,
   walletLinkResponseSchema,
+  walletVerifyBodySchema,
+  walletVerifyResponseSchema,
 } from "./contracts";
 import { authService } from "./service";
 
@@ -148,10 +152,42 @@ export const authRoutes = new Elysia({ prefix: "/auth", tags: ["Auth"] })
     {
       body: walletLinkBodySchema,
       detail: {
-        summary: "Link a Solana wallet to the authenticated user",
+        summary: "Link a Solana wallet to the authenticated user (legacy flow)",
+        description:
+          "Creates a pending wallet binding. For the secure flow, use /wallet/challenge and /wallet/verify instead.",
       },
       response: {
         200: walletLinkResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/wallet/challenge",
+    ({ auth, body }) => authService.requestWalletChallenge(requireAuthenticatedUser(auth), body),
+    {
+      body: walletChallengeRequestBodySchema,
+      detail: {
+        summary: "Request a challenge for wallet ownership verification",
+        description:
+          "Returns a challenge message that must be signed by the wallet and submitted to /wallet/verify.",
+      },
+      response: {
+        200: walletChallengeResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/wallet/verify",
+    ({ auth, body }) => authService.verifyWalletChallenge(requireAuthenticatedUser(auth), body),
+    {
+      body: walletVerifyBodySchema,
+      detail: {
+        summary: "Verify a wallet signature and activate the binding",
+        description:
+          "Verifies the signature against the previously issued challenge. On success, activates the wallet binding.",
+      },
+      response: {
+        200: walletVerifyResponseSchema,
       },
     },
   );

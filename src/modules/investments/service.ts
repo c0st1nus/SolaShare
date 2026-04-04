@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { db } from "../../db";
 import { assetSaleTerms, assets, investments, walletBindings } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
+import { prepareInvestmentTransaction } from "../../lib/solana";
 import { toMoneyString, toNumber, toShareAmountString } from "../shared/utils";
 import type {
   investmentPrepareResponseSchema,
@@ -181,22 +182,16 @@ export class InvestmentsService {
       return inserted;
     });
 
-    // TODO @waveofem: Replace this placeholder signing payload with a real Solana
-    // investment transaction builder. Expected behavior:
-    // 1. derive the correct asset/vault/mint accounts,
-    // 2. construct the buy instruction with validated sale terms,
-    // 3. return a transaction or message that the client signs,
-    // 4. preserve the operation_id so off-chain confirmation can reconcile the result.
-    return {
-      success: true,
-      operation_id: investment.id,
-      signing_payload: {
-        kind: "investment",
-        asset_id: input.asset_id,
-        amount_usdc: input.amount_usdc,
-      },
-      message: "Investment operation prepared and waiting for transaction confirmation",
-    };
+    // Build the Solana transaction for client signing
+    const payload = await prepareInvestmentTransaction({
+      operationId: investment.id,
+      assetId: input.asset_id,
+      investorWalletAddress: walletBinding.walletAddress,
+      amountUsdc: input.amount_usdc,
+      sharesToReceive: quote.shares_to_receive,
+    });
+
+    return payload as InvestmentPrepareResponse;
   }
 }
 

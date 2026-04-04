@@ -10,7 +10,7 @@ export const openApiPlugin = openapi({
       title: "SolaShare API",
       version: "0.1.0",
       description:
-        "REST API for the Solana-based RWA platform. Off-chain workflow state is implemented in PostgreSQL, while Solana transaction assembly remains an explicit TODO @waveofem integration point.",
+        "REST API for the Solana-based RWA platform. Off-chain workflow state is managed in PostgreSQL. Prepare endpoints return base64-encoded VersionedTransactions for client-side wallet signing. Transaction confirmations are submitted back to the API for off-chain reconciliation.",
     },
     tags: [
       {

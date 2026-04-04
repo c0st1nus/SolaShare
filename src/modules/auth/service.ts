@@ -11,6 +11,10 @@ import {
   walletBindings,
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
+import {
+  generateWalletChallenge,
+  verifyWalletSignature,
+} from "../../lib/solana";
 import type {
   authMeResponseSchema,
   authSessionResponseSchema,
@@ -23,8 +27,12 @@ import type {
   registerBodySchema,
   telegramLoginBodySchema,
   telegramMiniAppBodySchema,
+  walletChallengeRequestBodySchema,
+  walletChallengeResponseSchema,
   walletLinkBodySchema,
   walletLinkResponseSchema,
+  walletVerifyBodySchema,
+  walletVerifyResponseSchema,
 } from "./contracts";
 import {
   generateOpaqueToken,
@@ -49,6 +57,10 @@ type AuthMeResponse = z.infer<typeof authMeResponseSchema>;
 type GoogleAuthUrlResponse = z.infer<typeof googleAuthUrlResponseSchema>;
 type WalletLinkBody = z.infer<typeof walletLinkBodySchema>;
 type WalletLinkResponse = z.infer<typeof walletLinkResponseSchema>;
+type WalletChallengeRequestBody = z.infer<typeof walletChallengeRequestBodySchema>;
+type WalletChallengeResponse = z.infer<typeof walletChallengeResponseSchema>;
+type WalletVerifyBody = z.infer<typeof walletVerifyBodySchema>;
+type WalletVerifyResponse = z.infer<typeof walletVerifyResponseSchema>;
 
 type JwtSigner = {
   sign(payload: { sub: string; exp: number }): Promise<string>;
@@ -801,6 +813,131 @@ export class AuthService {
 
     return {
       success: true,
+    };
+  }
+
+  /**
+   * Request a challenge for wallet ownership verification.
+   * The challenge must be signed by the wallet and submitted to verifyWalletChallenge.
+   */
+  async requestWalletChallenge(
+    currentUser: AuthenticatedUser,
+    input: WalletChallengeRequestBody,
+  ): Promise<WalletChallengeResponse> {
+    const challenge = await generateWalletChallenge(
+      input.wallet_address,
+      "wallet_binding",
+    );
+
+    await db.insert(auditLogs).values({
+      actorUserId: currentUser.id,
+      entityType: "wallet_challenge",
+      entityId: input.wallet_address,
+      action: "wallet_challenge.requested",
+      payloadJson: {
+        wallet_address: input.wallet_address,
+        nonce: `${challenge.nonce.slice(0, 8)}...`,
+      },
+    });
+
+    return {
+      challenge: challenge.challenge,
+      nonce: challenge.nonce,
+      expires_at: challenge.expiresAt,
+    };
+  }
+
+  /**
+   * Verify a wallet signature against a previously issued challenge.
+   * On success, activates the wallet binding and updates the user's wallet address.
+   */
+  async verifyWalletChallenge(
+    currentUser: AuthenticatedUser,
+    input: WalletVerifyBody,
+  ): Promise<WalletVerifyResponse> {
+    const result = await verifyWalletSignature(
+      input.challenge,
+      input.signature,
+      input.wallet_address,
+    );
+
+    if (!result.valid) {
+      await db.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "wallet_challenge",
+        entityId: input.wallet_address,
+        action: "wallet_challenge.verification_failed",
+        payloadJson: {
+          wallet_address: input.wallet_address,
+          error: result.error,
+        },
+      });
+
+      return {
+        success: false,
+        verified: false,
+        error: result.error,
+      };
+    }
+
+    // Check if wallet is already linked to another user
+    const [existingBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(eq(walletBindings.walletAddress, input.wallet_address))
+      .limit(1);
+
+    if (existingBinding && existingBinding.userId !== currentUser.id) {
+      return {
+        success: false,
+        verified: true,
+        error: "Wallet is already linked to another account",
+      };
+    }
+
+    // Create or update wallet binding
+    await db.transaction(async (tx) => {
+      if (existingBinding) {
+        await tx
+          .update(walletBindings)
+          .set({
+            status: "active",
+            verifiedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(walletBindings.id, existingBinding.id));
+      } else {
+        await tx.insert(walletBindings).values({
+          userId: currentUser.id,
+          walletAddress: input.wallet_address,
+          status: "active",
+          verifiedAt: new Date(),
+        });
+      }
+
+      await tx
+        .update(users)
+        .set({
+          walletAddress: input.wallet_address,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, currentUser.id));
+
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "wallet_binding",
+        entityId: input.wallet_address,
+        action: "wallet_binding.verified",
+        payloadJson: {
+          wallet_address: input.wallet_address,
+          nonce: `${result.nonce.slice(0, 8)}...`,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      verified: true,
     };
   }
 }

@@ -689,6 +689,34 @@ export const idempotencyKeys = pgTable(
   ],
 );
 
+export const walletChallengeStatusEnum = pgEnum("wallet_challenge_status", [
+  "pending",
+  "verified",
+  "expired",
+]);
+
+export const walletChallenges = pgTable(
+  "wallet_challenges",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    nonce: text("nonce").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    operation: text("operation").default("wallet_binding").notNull(),
+    challengeHash: text("challenge_hash").notNull(),
+    status: walletChallengeStatusEnum("status").default("pending").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex("wallet_challenges_nonce_unique").on(table.nonce),
+    index("wallet_challenges_wallet_address_idx").on(table.walletAddress),
+    index("wallet_challenges_status_idx").on(table.status),
+    index("wallet_challenges_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Asset = typeof assets.$inferSelect;
@@ -721,3 +749,5 @@ export type JobExecutionLog = typeof jobExecutionLogs.$inferSelect;
 export type NewJobExecutionLog = typeof jobExecutionLogs.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
+export type WalletChallenge = typeof walletChallenges.$inferSelect;
+export type NewWalletChallenge = typeof walletChallenges.$inferInsert;

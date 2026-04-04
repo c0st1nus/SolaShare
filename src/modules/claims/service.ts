@@ -1,8 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
-import { claims, holdingsSnapshots, revenueEpochs } from "../../db/schema";
+import { claims, holdingsSnapshots, revenueEpochs, walletBindings } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
+import { prepareClaimTransaction } from "../../lib/solana";
 import { toMoneyString, toNumber } from "../shared/utils";
 import type { claimPrepareBodySchema, claimPrepareResponseSchema } from "./contracts";
 import { calculateClaimableAmount, isRevenueClaimableStatus } from "./domain";
@@ -19,7 +20,7 @@ export class ClaimsService {
     currentUser: InvestorActor,
     input: ClaimPrepareBody,
   ): Promise<ClaimPrepareResponse> {
-    const [holdingsRows, revenueEpochRows, confirmedClaimsAggregate, pendingClaimRows] =
+    const [holdingsRows, revenueEpochRows, confirmedClaimsAggregate, pendingClaimRows, walletRows] =
       await Promise.all([
         db
           .select()
@@ -67,10 +68,24 @@ export class ClaimsService {
           )
           .orderBy(desc(claims.createdAt))
           .limit(1),
+        db
+          .select()
+          .from(walletBindings)
+          .where(and(eq(walletBindings.userId, currentUser.id), eq(walletBindings.status, "active")))
+          .limit(1),
       ]);
     const holding = holdingsRows[0];
     const revenueEpoch = revenueEpochRows[0];
     const existingPendingClaim = pendingClaimRows[0];
+    const walletBinding = walletRows[0];
+
+    if (!walletBinding) {
+      throw new ApiError(
+        409,
+        "ACTIVE_WALLET_REQUIRED",
+        "An active wallet binding is required to claim revenue",
+      );
+    }
 
     if (!holding) {
       throw new ApiError(409, "HOLDINGS_NOT_FOUND", "No holdings found for this asset");
@@ -106,22 +121,17 @@ export class ClaimsService {
           .returning()
       )[0];
 
-    // TODO @waveofem: Replace this placeholder signing payload with a real Solana
-    // claim transaction flow. Expected behavior:
-    // 1. validate entitlement against on-chain holder state,
-    // 2. build the claim instruction for the selected revenue epoch,
-    // 3. ensure double-claim protection at the program level,
-    // 4. return a signable transaction/message tied to operation_id.
-    return {
-      success: true,
-      operation_id: claimRecord.id,
-      signing_payload: {
-        kind: "claim",
-        asset_id: input.asset_id,
-        revenue_epoch_id: input.revenue_epoch_id,
-      },
-      message: "Claim operation prepared and waiting for transaction confirmation",
-    };
+    // Build the Solana transaction for claimant signing
+    const payload = await prepareClaimTransaction({
+      operationId: claimRecord.id,
+      assetId: input.asset_id,
+      claimantWalletAddress: walletBinding.walletAddress,
+      epochNumber: revenueEpoch.epochNumber,
+      claimAmountUsdc: claimableAmount,
+      revenueEpochId: input.revenue_epoch_id,
+    });
+
+    return payload as ClaimPrepareResponse;
   }
 }
 

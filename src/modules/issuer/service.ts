@@ -9,9 +9,11 @@ import {
   auditLogs,
   revenueEpochs,
   verificationRequests,
+  walletBindings,
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
-import { toMoneyString } from "../shared/utils";
+import { prepareRevenuePostTransaction } from "../../lib/solana";
+import { toMoneyString, toNumber } from "../shared/utils";
 import type {
   issuerAssetBodySchema,
   issuerAssetDocumentBodySchema,
@@ -442,6 +444,21 @@ export class IssuerService {
     epochId: string,
   ): Promise<RevenuePostResponse> {
     await getOwnedAsset(assetId, currentUser.id);
+
+    const [walletBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(and(eq(walletBindings.userId, currentUser.id), eq(walletBindings.status, "active")))
+      .limit(1);
+
+    if (!walletBinding) {
+      throw new ApiError(
+        409,
+        "ACTIVE_WALLET_REQUIRED",
+        "An active wallet binding is required to post revenue",
+      );
+    }
+
     const [revenueEpoch] = await db
       .select()
       .from(revenueEpochs)
@@ -460,22 +477,17 @@ export class IssuerService {
       );
     }
 
-    // TODO @waveofem: Replace this placeholder with the real Solana revenue-posting
-    // orchestration. Expected behavior:
-    // 1. derive the asset, treasury/vault and revenue epoch program accounts,
-    // 2. build the post_revenue instruction with amount/report hash references,
-    // 3. return a signable transaction/message for the issuer wallet,
-    // 4. keep operation_id aligned with revenue_epoch_id for off-chain reconciliation.
-    return {
-      success: true,
-      operation_id: revenueEpoch.id,
-      transaction_payload: {
-        kind: "revenue_post",
-        asset_id: assetId,
-        revenue_epoch_id: epochId,
-      },
-      message: "Revenue posting operation prepared and waiting for transaction confirmation",
-    };
+    // Build the Solana transaction for issuer signing
+    const payload = await prepareRevenuePostTransaction({
+      operationId: revenueEpoch.id,
+      assetId,
+      issuerWalletAddress: walletBinding.walletAddress,
+      epochNumber: revenueEpoch.epochNumber,
+      amountUsdc: toNumber(revenueEpoch.distributableRevenueUsdc),
+      reportHash: revenueEpoch.reportHash ?? "",
+    });
+
+    return payload as RevenuePostResponse;
   }
 }
 
