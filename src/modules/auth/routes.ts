@@ -8,8 +8,11 @@ import {
   googleAuthUrlResponseSchema,
   loginBodySchema,
   logoutBodySchema,
+  passwordLinkBodySchema,
+  passwordLinkResponseSchema,
   refreshBodySchema,
   registerBodySchema,
+  telegramAuthPreviewResponseSchema,
   telegramLoginBodySchema,
   telegramMiniAppBodySchema,
   walletChallengeRequestBodySchema,
@@ -104,6 +107,16 @@ export const authRoutes = new Elysia({ prefix: "/auth", tags: ["Auth"] })
       },
     },
   )
+  .post("/telegram/preview", ({ body }) => authService.previewTelegramAuth(body), {
+    body: telegramMiniAppBodySchema,
+    detail: {
+      summary:
+        "Validate Telegram Mini App init data and determine whether to log in or create an account",
+    },
+    response: {
+      200: telegramAuthPreviewResponseSchema,
+    },
+  })
   .post(
     "/telegram",
     ({ body, jwt, request }) =>
@@ -143,6 +156,19 @@ export const authRoutes = new Elysia({ prefix: "/auth", tags: ["Auth"] })
       },
       response: {
         200: authSessionResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/password/link",
+    ({ auth, body }) => authService.linkPasswordIdentity(requireAuthenticatedUser(auth), body),
+    {
+      body: passwordLinkBodySchema,
+      detail: {
+        summary: "Enable browser login for the authenticated account by linking email and password",
+      },
+      response: {
+        200: passwordLinkResponseSchema,
       },
     },
   )

@@ -123,9 +123,11 @@ Responses generally follow one of these shapes:
 | `POST /auth/logout` | Public | refresh-session revocation |
 | `GET /auth/google/url` | Public | build Google OAuth URL |
 | `POST /auth/google` | Public | exchange Google code |
+| `POST /auth/telegram/preview` | Public | validate Telegram Mini App init data and suggest login or registration |
 | `POST /auth/telegram` | Public | Telegram Mini App login entrypoint |
 | `POST /auth/telegram/login` | Public | Telegram Login Widget entrypoint |
 | `GET /auth/me` | Authenticated user | current auth profile |
+| `POST /auth/password/link` | Authenticated user | add email/password login to the current account |
 | `POST /auth/wallet/link` | Authenticated user | links wallet to current user |
 | `GET /admin/users` | Authenticated admin | list platform users |
 | `POST /admin/users` | Authenticated admin | create investor, issuer, or admin account |
@@ -499,6 +501,53 @@ Access:
 
 ---
 
+## POST /auth/telegram/preview
+
+Validates Telegram Mini App init data and tells the frontend whether to suggest login
+into an existing account or create a new one.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "telegram_init_data": "query_id=AAE...&user=%7B...%7D&auth_date=1710000000&hash=..."
+}
+```
+
+### Response
+
+```json
+{
+  "suggested_action": "login",
+  "telegram_user": {
+    "telegram_user_id": "777000",
+    "telegram_username": "waveofem",
+    "display_name": "Konstantin",
+    "photo_url": "https://t.me/i/userpic/320/example.jpg"
+  },
+  "existing_account": {
+    "user_id": "1cfad859-e4ff-4a12-8ec9-87ff42baf4ff",
+    "display_name": "Konstantin",
+    "avatar_url": null,
+    "role": "investor",
+    "auth_providers": ["telegram", "password"]
+  }
+}
+```
+
+### Notes
+
+- use this route only when the frontend is already running inside Telegram Mini App
+- if `suggested_action` is `register`, the frontend should offer account creation through Telegram
+- if `suggested_action` is `login`, the frontend should offer sign-in into the existing account
+- the final session is still created by `POST /auth/telegram`
+
+---
+
 ## POST /auth/telegram
 
 Authenticates a user through Telegram Mini App init data.
@@ -519,6 +568,50 @@ Access:
 
 - this is the preferred auth path when the site is opened inside Telegram Mini App
 - `POST /auth/telegram/miniapp` is an alias of the same flow in the backend
+
+---
+
+## POST /auth/password/link
+
+Adds email/password authentication to the currently authenticated account. This is the
+recommended way to make a Telegram-created account accessible from a normal browser later.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "email": "investor@example.com",
+  "password": "Password123!"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": "1cfad859-e4ff-4a12-8ec9-87ff42baf4ff",
+    "email": "investor@example.com",
+    "display_name": "Investor One",
+    "bio": null,
+    "avatar_url": null,
+    "role": "investor",
+    "kyc_status": "not_started",
+    "wallet_address": null,
+    "auth_providers": ["password", "telegram"]
+  }
+}
+```
+
+### Notes
+
+- frontend should show this flow after Telegram sign-in when `password` is missing from `auth_providers`
+- if the email already belongs to another user, the backend returns `409`
 
 ---
 
@@ -1615,17 +1708,19 @@ Access:
 ### Authentication Flow
 
 1. frontend detects whether Telegram Mini App init data is present
-2. if Mini App context exists, frontend prefers `POST /auth/telegram`
-3. otherwise frontend shows:
+2. if Mini App context exists, frontend first calls `POST /auth/telegram/preview`
+3. Mini App frontend shows a Telegram-first CTA based on `suggested_action`, then confirms through `POST /auth/telegram`
+4. otherwise frontend shows:
    - `POST /auth/register`
    - `POST /auth/login`
    - Google OAuth via `GET /auth/google/url` then `POST /auth/google`
    - Telegram Login Widget via `POST /auth/telegram/login`
-4. frontend stores `access_token` and `refresh_token`
-5. frontend rotates refresh state with `POST /auth/refresh`
-6. frontend branches UI using `user.role`
-7. optional wallet flow calls `POST /auth/wallet/link`
-8. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
+5. after Telegram sign-in, frontend may offer `POST /auth/password/link` so the same account can later be opened from a regular browser
+6. frontend stores `access_token` and `refresh_token`
+7. frontend rotates refresh state with `POST /auth/refresh`
+8. frontend branches UI using `user.role`
+9. optional wallet flow calls `POST /auth/wallet/link`
+10. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
 
 ### Public Asset Discovery Flow
 

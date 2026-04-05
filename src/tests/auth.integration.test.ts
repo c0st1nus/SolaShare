@@ -60,17 +60,11 @@ describe("auth integration", () => {
 
     expect(first.role).toBe("admin");
 
-    const [adminUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, first.userId))
-      .limit(1);
+    const [adminUser] = await db.select().from(users).where(eq(users.id, first.userId)).limit(1);
     expect(adminUser?.role).toBe("admin");
 
     const rows = await db.select().from(auditLogs);
-    expect(
-      rows.some((row) => row.action === "system.bootstrap_admin_created"),
-    ).toBe(true);
+    expect(rows.some((row) => row.action === "system.bootstrap_admin_created")).toBe(true);
 
     await expect(
       bootstrapPasswordAdmin({
@@ -186,6 +180,45 @@ describe("auth integration", () => {
     expect(persistedUser?.displayName).toBe("Test User");
   });
 
+  it("returns a register suggestion for a new telegram miniapp user", async () => {
+    const preview = await authService.previewTelegramAuth({
+      telegram_init_data: createSignedTelegramInitData({
+        id: "telegram-preview-new",
+        username: "newuser",
+        display_name: "New User",
+      }),
+    });
+
+    expect(preview.suggested_action).toBe("register");
+    expect(preview.existing_account).toBeNull();
+    expect(preview.telegram_user.telegram_user_id).toBe("telegram-preview-new");
+  });
+
+  it("returns a login suggestion for an existing telegram miniapp user", async () => {
+    const session = await authService.authenticateWithTelegram(
+      {
+        telegram_init_data: createSignedTelegramInitData({
+          id: "telegram-preview-existing",
+          username: "existinguser",
+          display_name: "Existing User",
+        }),
+      },
+      jwtSigner,
+    );
+
+    const preview = await authService.previewTelegramAuth({
+      telegram_init_data: createSignedTelegramInitData({
+        id: "telegram-preview-existing",
+        username: "existinguser",
+        display_name: "Existing User",
+      }),
+    });
+
+    expect(preview.suggested_action).toBe("login");
+    expect(preview.existing_account?.user_id).toBe(session.user.id);
+    expect(preview.existing_account?.auth_providers).toEqual(["telegram"]);
+  });
+
   it("updates an existing user profile on repeated telegram login widget auth", async () => {
     const miniappResponse = await authService.authenticateWithTelegram(
       {
@@ -245,6 +278,42 @@ describe("auth integration", () => {
 
     expect(response.user.id).toBe(user.id);
     expect(response.user.auth_providers).toEqual(["google", "password"]);
+  });
+
+  it("links email and password to a telegram account so it can be used in a browser", async () => {
+    const telegramSession = await authService.authenticateWithTelegram(
+      {
+        telegram_init_data: createSignedTelegramInitData({
+          id: "telegram-password-link",
+          username: "browseruser",
+          display_name: "Browser User",
+        }),
+      },
+      jwtSigner,
+    );
+
+    const linked = await authService.linkPasswordIdentity(
+      { id: telegramSession.user.id },
+      {
+        email: "browser@example.com",
+        password: "Password123!",
+      },
+    );
+
+    expect(linked.success).toBe(true);
+    expect(linked.user.auth_providers).toEqual(["password", "telegram"]);
+    expect(linked.user.email).toBe("browser@example.com");
+
+    const passwordSession = await authService.login(
+      {
+        email: "browser@example.com",
+        password: "Password123!",
+      },
+      jwtSigner,
+    );
+
+    expect(passwordSession.user.id).toBe(telegramSession.user.id);
+    expect(passwordSession.user.auth_providers).toEqual(["password", "telegram"]);
   });
 
   it("creates a pending wallet binding request", async () => {

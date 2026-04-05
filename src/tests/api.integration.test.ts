@@ -2,13 +2,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { env } from "../config/env";
 import { db } from "../db";
-import {
-  auditLogs,
-  userSessions,
-  users,
-  verificationRequests,
-  walletBindings,
-} from "../db/schema";
+import { auditLogs, userSessions, users, verificationRequests, walletBindings } from "../db/schema";
 import {
   apiRequest,
   createAccessToken,
@@ -236,11 +230,7 @@ describe("api integration", () => {
       role: "issuer",
     });
 
-    const [updatedUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, investor.id))
-      .limit(1);
+    const [updatedUser] = await db.select().from(users).where(eq(users.id, investor.id)).limit(1);
     expect(updatedUser?.role).toBe("issuer");
 
     const rows = await db.select().from(auditLogs);
@@ -268,9 +258,7 @@ describe("api integration", () => {
     const listedItems = Array.isArray(listBefore.json?.items)
       ? (listBefore.json.items as Array<{ email?: string }>)
       : [];
-    expect(
-      listedItems.some((item) => item.email === "listed-user@example.com"),
-    ).toBe(true);
+    expect(listedItems.some((item) => item.email === "listed-user@example.com")).toBe(true);
 
     const createResult = await apiRequest({
       method: "POST",
@@ -400,6 +388,79 @@ describe("api integration", () => {
 
     expect(response.status).toBe(200);
     expect(typeof json?.access_token).toBe("string");
+  });
+
+  it("previews whether telegram miniapp auth should log in or register", async () => {
+    const existingSession = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/telegram",
+      body: {
+        telegram_init_data: createSignedTelegramInitData({
+          id: "api-preview-existing",
+          display_name: "Existing Mini App User",
+        }),
+      },
+    });
+
+    const existingPreview = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/telegram/preview",
+      body: {
+        telegram_init_data: createSignedTelegramInitData({
+          id: "api-preview-existing",
+          display_name: "Existing Mini App User",
+        }),
+      },
+    });
+
+    expect(existingPreview.response.status).toBe(200);
+    expect(existingPreview.json?.suggested_action).toBe("login");
+    expect(existingPreview.json?.existing_account).not.toBeNull();
+    expect((existingPreview.json?.existing_account as { user_id?: string }).user_id).toBe(
+      (existingSession.json?.user as { id?: string }).id,
+    );
+
+    const newPreview = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/telegram/preview",
+      body: {
+        telegram_init_data: createSignedTelegramInitData({
+          id: "api-preview-new",
+          display_name: "New Mini App User",
+        }),
+      },
+    });
+
+    expect(newPreview.response.status).toBe(200);
+    expect(newPreview.json?.suggested_action).toBe("register");
+    expect(newPreview.json?.existing_account).toBeNull();
+  });
+
+  it("links email/password to the authenticated telegram account over HTTP", async () => {
+    const telegramSession = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/telegram",
+      body: {
+        telegram_init_data: createSignedTelegramInitData({
+          id: "api-password-link",
+          display_name: "Telegram Browser User",
+        }),
+      },
+    });
+
+    const { response, json } = await apiRequest({
+      method: "POST",
+      path: "/api/v1/auth/password/link",
+      token: createAccessToken((telegramSession.json?.user as { id: string }).id),
+      body: {
+        email: "browser-http@example.com",
+        password: "Password123!",
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(json?.success).toBe(true);
+    expect((json?.user as { email?: string }).email).toBe("browser-http@example.com");
   });
 
   it("returns a google authorization url when configured", async () => {

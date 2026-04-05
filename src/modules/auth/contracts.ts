@@ -47,14 +47,31 @@ export const telegramLoginBodySchema = z.object({
   last_name: z.string().trim().optional(),
   username: z.string().trim().optional(),
   photo_url: z.string().url().optional(),
-  auth_date: z
-    .union([z.string(), z.number()])
-    .transform((value) => String(value)),
+  auth_date: z.union([z.string(), z.number()]).transform((value) => String(value)),
   hash: z.string().min(1),
 });
 
 export const telegramMiniAppBodySchema = z.object({
   telegram_init_data: z.string().min(1),
+});
+
+export const telegramAuthPreviewResponseSchema = z.object({
+  suggested_action: z.enum(["login", "register"]),
+  telegram_user: z.object({
+    telegram_user_id: z.string(),
+    telegram_username: z.string().nullable(),
+    display_name: z.string(),
+    photo_url: z.string().nullable(),
+  }),
+  existing_account: z
+    .object({
+      user_id: uuidSchema,
+      display_name: z.string(),
+      avatar_url: z.string().nullable(),
+      role: userRoleSchema,
+      auth_providers: z.array(authProviderSchema),
+    })
+    .nullable(),
 });
 
 export const authUserSchema = z.object({
@@ -83,6 +100,16 @@ export const authMeResponseSchema = z.object({
 
 export const googleAuthUrlResponseSchema = z.object({
   authorization_url: z.string().url(),
+});
+
+export const passwordLinkBodySchema = z.object({
+  email: z.email().transform((value) => value.trim().toLowerCase()),
+  password: z.string().min(8).max(128),
+});
+
+export const passwordLinkResponseSchema = z.object({
+  success: z.literal(true),
+  user: authUserSchema,
 });
 
 export const walletLinkBodySchema = z.object({
