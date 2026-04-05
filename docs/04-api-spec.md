@@ -463,7 +463,7 @@ Access:
 ```json
 {
   "code": "4/0AdQt8qh...",
-  "redirect_uri": "https://web.solashare.test/auth/oauth/google/callback"
+  "redirect_uri": "https://web.solashare.test/auth/google/callback"
 }
 ```
 
