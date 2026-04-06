@@ -41,8 +41,7 @@ export const adminRoutes = new Elysia({ prefix: "/admin", tags: ["Admin"] })
   )
   .get(
     "/assets/:id",
-    ({ auth, params }) =>
-      adminService.getAssetDetails(requireUserRole(auth, ["admin"]), params.id),
+    ({ auth, params }) => adminService.getAssetDetails(requireUserRole(auth, ["admin"]), params.id),
     {
       params: adminAssetActionParamsSchema,
       detail: {

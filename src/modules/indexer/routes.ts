@@ -1,13 +1,13 @@
 import { Elysia, t } from "elysia";
-import { authPlugin, requireUserRole } from "../../plugins/auth";
+import { logger } from "../../lib/logger";
 import {
+  getIndexerStatus,
+  handleWebhookTransaction,
   startPollingIndexer,
   stopPollingIndexer,
-  getIndexerStatus,
   syncTransaction,
-  handleWebhookTransaction,
 } from "../../lib/solana/indexer";
-import { logger } from "../../lib/logger";
+import { authPlugin, requireUserRole } from "../../plugins/auth";
 
 const log = logger.child({ module: "indexer-routes" });
 

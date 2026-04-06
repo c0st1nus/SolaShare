@@ -14,8 +14,7 @@ export const investmentsRoutes = new Elysia({
   .use(authPlugin)
   .post(
     "/quote",
-    ({ auth, body }) =>
-      investmentsService.getQuote(requireAuthenticatedUser(auth), body),
+    ({ auth, body }) => investmentsService.getQuote(requireAuthenticatedUser(auth), body),
     {
       body: investmentQuoteBodySchema,
       detail: {
@@ -28,8 +27,7 @@ export const investmentsRoutes = new Elysia({
   )
   .post(
     "/prepare",
-    ({ auth, body }) =>
-      investmentsService.prepareInvestment(requireAuthenticatedUser(auth), body),
+    ({ auth, body }) => investmentsService.prepareInvestment(requireAuthenticatedUser(auth), body),
     {
       body: investmentQuoteBodySchema,
       detail: {

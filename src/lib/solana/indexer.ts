@@ -1,20 +1,11 @@
+import type { ConfirmedSignatureInfo, ParsedTransactionWithMeta } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
-import type { ParsedTransactionWithMeta, ConfirmedSignatureInfo } from "@solana/web3.js";
-import { eq, and } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
-import {
-  investments,
-  claims,
-  revenueEpochs,
-  webhookEvents,
-  auditLogs,
-} from "../../db/schema";
-import { connection, programId } from "../../lib/solana/config";
-import {
-  fetchAndVerifyTransaction,
-  isValidSignature,
-} from "../../lib/solana/verification";
+import { auditLogs, claims, investments, revenueEpochs, webhookEvents } from "../../db/schema";
 import { logger } from "../../lib/logger";
+import { connection, programId } from "../../lib/solana/config";
+import { fetchAndVerifyTransaction, isValidSignature } from "../../lib/solana/verification";
 
 const log = logger.child({ module: "solana-indexer" });
 
@@ -81,9 +72,7 @@ let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 /**
  * Start the indexer in polling mode
  */
-export async function startPollingIndexer(
-  intervalMs = POLLING_INTERVAL_MS,
-): Promise<void> {
+export async function startPollingIndexer(intervalMs = POLLING_INTERVAL_MS): Promise<void> {
   if (indexerRunning) {
     log.warn("Indexer already running");
     return;
@@ -195,12 +184,7 @@ async function processTransaction(sigInfo: ConfirmedSignatureInfo): Promise<void
   const [existingEvent] = await db
     .select({ id: webhookEvents.id })
     .from(webhookEvents)
-    .where(
-      and(
-        eq(webhookEvents.source, "indexer"),
-        eq(webhookEvents.externalEventId, signature),
-      ),
-    )
+    .where(and(eq(webhookEvents.source, "indexer"), eq(webhookEvents.externalEventId, signature)))
     .limit(1);
 
   if (existingEvent) {
@@ -407,10 +391,7 @@ async function processBuySharesTransaction(
         payloadJson: { signature, indexed: true },
       });
 
-      log.info(
-        { investmentId: investment.id, signature },
-        "Investment auto-confirmed by indexer",
-      );
+      log.info({ investmentId: investment.id, signature }, "Investment auto-confirmed by indexer");
     }
     return;
   }
@@ -483,10 +464,7 @@ async function processClaimYieldTransaction(
 
   if (claim) {
     if (claim.status === "pending") {
-      await db
-        .update(claims)
-        .set({ status: "confirmed" })
-        .where(eq(claims.id, claim.id));
+      await db.update(claims).set({ status: "confirmed" }).where(eq(claims.id, claim.id));
 
       await db.insert(auditLogs).values({
         actorUserId: claim.userId,
@@ -533,12 +511,7 @@ export async function handleWebhookTransaction(
   const [existing] = await db
     .select({ id: webhookEvents.id })
     .from(webhookEvents)
-    .where(
-      and(
-        eq(webhookEvents.source, "webhook"),
-        eq(webhookEvents.externalEventId, signature),
-      ),
-    )
+    .where(and(eq(webhookEvents.source, "webhook"), eq(webhookEvents.externalEventId, signature)))
     .limit(1);
 
   if (existing) {

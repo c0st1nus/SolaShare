@@ -1,47 +1,55 @@
+import { createHash } from "node:crypto";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import {
   PublicKey,
   SystemProgram,
   TransactionInstruction,
-  SYSVAR_RENT_PUBKEY,
+  type VersionedTransaction,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { connection, programId } from "./config";
-import {
-  deriveAssetPDA,
-  deriveVaultPDA,
-  deriveRevenueEpochPDA,
-  deriveClaimPDA,
-  deriveShareMintPDA,
-} from "./pda";
-import {
-  createVersionedTransaction,
-  createComputeBudgetInstructions,
-  serializeTransaction,
-} from "./utils";
 import { ApiError } from "../api-error";
 import { logger } from "../logger";
+import { connection, getUsdcMintAddress, payerKeypair, programId } from "./config";
+import {
+  deriveAssetPDA,
+  deriveClaimPDA,
+  deriveRevenueEpochPDA,
+  deriveShareMintPDA,
+  deriveVaultPDA,
+} from "./pda";
+import { resolveTokenProgramForMint, tokenProgramLabel } from "./token-program";
+import {
+  createComputeBudgetInstructions,
+  createVersionedTransaction,
+  serializeTransaction,
+  signTransaction,
+} from "./utils";
 
 const log = logger.child({ module: "solana-transactions" });
 
-/** Default priority fee in micro-lamports */
 const DEFAULT_PRIORITY_FEE = 50_000;
-
-/** Default compute unit limit */
 const DEFAULT_COMPUTE_UNITS = 200_000;
-
-/** Blockhash validity (~150 blocks, ~1 minute) */
 const BLOCKHASH_EXPIRY_MS = 60_000;
+const USDC_DECIMALS = 6;
+const SHARE_DECIMALS = 6;
 
-/** Instruction discriminators (8-byte Anchor-style) */
+function anchorDiscriminator(name: string): Buffer {
+  return createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
+}
+
 const INSTRUCTION_DISCRIMINATORS = {
-  buyShares: Buffer.from([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-  postRevenue: Buffer.from([0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-  claimYield: Buffer.from([0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+  createAsset: anchorDiscriminator("create_asset"),
+  activateSale: anchorDiscriminator("activate_sale"),
+  buyShares: anchorDiscriminator("buy_shares"),
+  postRevenue: anchorDiscriminator("post_revenue"),
+  claimYield: anchorDiscriminator("claim_yield"),
+  withdrawFunds: anchorDiscriminator("withdraw_funds"),
 };
 
-/**
- * Standard transaction payload returned by all prepare endpoints
- */
 export interface TransactionPayload {
   success: true;
   operation_id: string;
@@ -52,9 +60,20 @@ export interface TransactionPayload {
 }
 
 export type TransactionMetadata =
+  | AssetSetupMetadata
   | InvestmentMetadata
   | RevenuePostMetadata
-  | ClaimMetadata;
+  | ClaimMetadata
+  | WithdrawMetadata;
+
+export interface AssetSetupMetadata {
+  kind: "asset_setup";
+  asset_id: string;
+  metadata_uri: string;
+  total_shares: number;
+  price_per_share_usdc: number;
+  activate_sale: boolean;
+}
 
 export interface InvestmentMetadata {
   kind: "investment";
@@ -79,9 +98,12 @@ export interface ClaimMetadata {
   claim_amount_usdc: number;
 }
 
-/**
- * Get the program ID as a PublicKey, throwing if not configured
- */
+export interface WithdrawMetadata {
+  kind: "withdraw";
+  asset_id: string;
+  amount_usdc: number;
+}
+
 function getProgramId(): PublicKey {
   if (!programId) {
     throw new ApiError(500, "SOLANA_PROGRAM_ID_MISSING", "Solana program is not configured");
@@ -90,10 +112,27 @@ function getProgramId(): PublicKey {
   try {
     return new PublicKey(programId);
   } catch {
+    throw new ApiError(500, "SOLANA_PROGRAM_ID_INVALID", "Solana program configuration is invalid");
+  }
+}
+
+function getUsdcMintPubkey(): PublicKey {
+  const usdcMintAddress = getUsdcMintAddress();
+  if (!usdcMintAddress) {
     throw new ApiError(
       500,
-      "SOLANA_PROGRAM_ID_INVALID",
-      "Solana program configuration is invalid",
+      "SOLANA_USDC_MINT_MISSING",
+      "SOLANA_USDC_MINT_ADDRESS is required for on-chain investment flows",
+    );
+  }
+
+  try {
+    return new PublicKey(usdcMintAddress);
+  } catch {
+    throw new ApiError(
+      500,
+      "SOLANA_USDC_MINT_INVALID",
+      "SOLANA_USDC_MINT_ADDRESS is not a valid public key",
     );
   }
 }
@@ -110,9 +149,6 @@ function parseWalletPublicKey(walletAddress: string, fieldLabel: string): Public
   }
 }
 
-/**
- * Detect current network from RPC URL
- */
 function detectNetwork(): "devnet" | "mainnet" | "localnet" {
   const rpcUrl = connection.rpcEndpoint.toLowerCase();
   if (rpcUrl.includes("mainnet")) return "mainnet";
@@ -120,54 +156,190 @@ function detectNetwork(): "devnet" | "mainnet" | "localnet" {
   return "devnet";
 }
 
-/**
- * Build the buy_shares instruction for an investment
- */
+function encodeU64(value: bigint): Buffer {
+  const buffer = Buffer.alloc(8);
+  buffer.writeBigUInt64LE(value);
+  return buffer;
+}
+
+function encodeString(value: string): Buffer {
+  const bytes = Buffer.from(value, "utf8");
+  const length = Buffer.alloc(4);
+  length.writeUInt32LE(bytes.length, 0);
+  return Buffer.concat([length, bytes]);
+}
+
+function encodeCreateAssetData(params: {
+  assetId: string;
+  metadataUri: string;
+  totalSharesAtomic: bigint;
+  pricePerShareAtomic: bigint;
+}) {
+  return Buffer.concat([
+    INSTRUCTION_DISCRIMINATORS.createAsset,
+    encodeString(params.assetId),
+    encodeString(params.metadataUri),
+    encodeU64(params.totalSharesAtomic),
+    encodeU64(params.pricePerShareAtomic),
+  ]);
+}
+
+function encodeBuySharesData(amountUsdcAtomic: bigint, sharesToReceiveAtomic: bigint) {
+  return Buffer.concat([
+    INSTRUCTION_DISCRIMINATORS.buyShares,
+    encodeU64(amountUsdcAtomic),
+    encodeU64(sharesToReceiveAtomic),
+  ]);
+}
+
+function encodePostRevenueData(epochNumber: number, amountUsdcAtomic: bigint, reportHash: Buffer) {
+  return Buffer.concat([
+    INSTRUCTION_DISCRIMINATORS.postRevenue,
+    encodeU64(BigInt(epochNumber)),
+    encodeU64(amountUsdcAtomic),
+    reportHash,
+  ]);
+}
+
+function encodeClaimYieldData(epochNumber: number, claimAmountUsdcAtomic: bigint) {
+  return Buffer.concat([
+    INSTRUCTION_DISCRIMINATORS.claimYield,
+    encodeU64(BigInt(epochNumber)),
+    encodeU64(claimAmountUsdcAtomic),
+  ]);
+}
+
+function encodeWithdrawData(amountUsdcAtomic: bigint) {
+  return Buffer.concat([INSTRUCTION_DISCRIMINATORS.withdrawFunds, encodeU64(amountUsdcAtomic)]);
+}
+
+function toAtomicUnits(value: number, decimals: number): bigint {
+  return BigInt(Math.round(value * 10 ** decimals));
+}
+
+function reportHashToBuffer(reportHash: string): Buffer {
+  const normalized = reportHash.startsWith("sha256:")
+    ? reportHash.slice("sha256:".length)
+    : reportHash;
+
+  if (/^[a-f0-9]{64}$/i.test(normalized)) {
+    return Buffer.from(normalized, "hex");
+  }
+
+  return createHash("sha256").update(reportHash, "utf8").digest();
+}
+
+function maybeSignWithPayer(transaction: VersionedTransaction): VersionedTransaction {
+  if (!payerKeypair) {
+    return transaction;
+  }
+
+  signTransaction(transaction, [payerKeypair]);
+  return transaction;
+}
+
+export function buildCreateAssetInstruction(params: {
+  assetId: string;
+  issuerPubkey: PublicKey;
+  metadataUri: string;
+  totalShares: number;
+  pricePerShareUsdc: number;
+  tokenProgramPubkey?: PublicKey;
+}): TransactionInstruction {
+  const program = getProgramId();
+  const paymentMint = getUsdcMintPubkey();
+  const tokenProgram = params.tokenProgramPubkey ?? TOKEN_PROGRAM_ID;
+  const { assetId, issuerPubkey, metadataUri, totalShares, pricePerShareUsdc } = params;
+  const assetPda = deriveAssetPDA({ assetId });
+  const shareMintPda = deriveShareMintPDA(assetId);
+  const vaultPda = deriveVaultPDA({ assetId });
+
+  return new TransactionInstruction({
+    programId: program,
+    keys: [
+      { pubkey: issuerPubkey, isSigner: true, isWritable: true },
+      { pubkey: assetPda.publicKey, isSigner: false, isWritable: true },
+      { pubkey: shareMintPda.publicKey, isSigner: false, isWritable: true },
+      { pubkey: vaultPda.publicKey, isSigner: false, isWritable: true },
+      { pubkey: paymentMint, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeCreateAssetData({
+      assetId,
+      metadataUri,
+      totalSharesAtomic: toAtomicUnits(totalShares, SHARE_DECIMALS),
+      pricePerShareAtomic: toAtomicUnits(pricePerShareUsdc, USDC_DECIMALS),
+    }),
+  });
+}
+
+export function buildActivateSaleInstruction(params: {
+  assetId: string;
+  issuerPubkey: PublicKey;
+}): TransactionInstruction {
+  const program = getProgramId();
+  const assetPda = deriveAssetPDA({ assetId: params.assetId });
+
+  return new TransactionInstruction({
+    programId: program,
+    keys: [
+      { pubkey: params.issuerPubkey, isSigner: true, isWritable: true },
+      { pubkey: assetPda.publicKey, isSigner: false, isWritable: true },
+    ],
+    data: Buffer.from(INSTRUCTION_DISCRIMINATORS.activateSale),
+  });
+}
+
 export function buildBuySharesInstruction(params: {
   assetId: string;
   investorPubkey: PublicKey;
   amountUsdc: number;
   sharesToReceive: number;
+  assetPubkey?: PublicKey;
+  vaultPubkey?: PublicKey;
+  shareMintPubkey?: PublicKey;
+  paymentMintPubkey?: PublicKey;
+  tokenProgramPubkey?: PublicKey;
 }): TransactionInstruction {
   const program = getProgramId();
-  const { assetId, investorPubkey, amountUsdc, sharesToReceive } = params;
-
-  // Derive PDAs
-  const assetPda = deriveAssetPDA({ assetId });
-  const vaultPda = deriveVaultPDA({ assetId });
-  const shareMintPda = deriveShareMintPDA(assetId);
-
-  // Get investor's associated token account for share tokens
+  const paymentMint = params.paymentMintPubkey ?? getUsdcMintPubkey();
+  const tokenProgram = params.tokenProgramPubkey ?? TOKEN_PROGRAM_ID;
+  const assetPda = params.assetPubkey ?? deriveAssetPDA({ assetId: params.assetId }).publicKey;
+  const vaultPda = params.vaultPubkey ?? deriveVaultPDA({ assetId: params.assetId }).publicKey;
+  const shareMintPda = params.shareMintPubkey ?? deriveShareMintPDA(params.assetId).publicKey;
   const investorShareAccount = getAssociatedTokenAddressSync(
-    shareMintPda.publicKey,
-    investorPubkey,
+    shareMintPda,
+    params.investorPubkey,
+    false,
+    tokenProgram,
   );
-
-  // Build instruction data: discriminator + amount (u64) + shares (u64)
-  const data = Buffer.alloc(8 + 8 + 8);
-  INSTRUCTION_DISCRIMINATORS.buyShares.copy(data, 0);
-  data.writeBigUInt64LE(BigInt(Math.round(amountUsdc * 1_000_000)), 8); // USDC has 6 decimals
-  data.writeBigUInt64LE(BigInt(Math.round(sharesToReceive * 1_000_000)), 16); // Share decimals
+  const investorUsdcAccount = getAssociatedTokenAddressSync(
+    paymentMint,
+    params.investorPubkey,
+    false,
+    tokenProgram,
+  );
 
   return new TransactionInstruction({
     programId: program,
     keys: [
-      { pubkey: assetPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: vaultPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: shareMintPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: investorPubkey, isSigner: true, isWritable: true },
+      { pubkey: params.investorPubkey, isSigner: true, isWritable: true },
+      { pubkey: assetPda, isSigner: false, isWritable: true },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: shareMintPda, isSigner: false, isWritable: true },
       { pubkey: investorShareAccount, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+      { pubkey: investorUsdcAccount, isSigner: false, isWritable: true },
+      { pubkey: paymentMint, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram, isSigner: false, isWritable: false },
     ],
-    data,
+    data: encodeBuySharesData(
+      toAtomicUnits(params.amountUsdc, USDC_DECIMALS),
+      toAtomicUnits(params.sharesToReceive, SHARE_DECIMALS),
+    ),
   });
 }
 
-/**
- * Build the post_revenue instruction for a revenue epoch
- */
 export function buildPostRevenueInstruction(params: {
   assetId: string;
   issuerPubkey: PublicKey;
@@ -176,87 +348,110 @@ export function buildPostRevenueInstruction(params: {
   reportHash: string;
 }): TransactionInstruction {
   const program = getProgramId();
-  const { assetId, issuerPubkey, epochNumber, amountUsdc, reportHash } = params;
-
-  // Derive PDAs
-  const assetPda = deriveAssetPDA({ assetId });
-  const vaultPda = deriveVaultPDA({ assetId });
-  const revenueEpochPda = deriveRevenueEpochPDA({ assetId, epochNumber });
-
-  // Build instruction data: discriminator + epoch (u64) + amount (u64) + report_hash (32 bytes)
-  const reportHashBytes = Buffer.from(reportHash.slice(0, 64).padEnd(64, "0"), "hex");
-  const data = Buffer.alloc(8 + 8 + 8 + 32);
-  INSTRUCTION_DISCRIMINATORS.postRevenue.copy(data, 0);
-  data.writeBigUInt64LE(BigInt(epochNumber), 8);
-  data.writeBigUInt64LE(BigInt(Math.round(amountUsdc * 1_000_000)), 16);
-  reportHashBytes.copy(data, 24);
+  const assetPda = deriveAssetPDA({ assetId: params.assetId });
+  const revenueEpochPda = deriveRevenueEpochPDA({
+    assetId: params.assetId,
+    epochNumber: params.epochNumber,
+  });
 
   return new TransactionInstruction({
     programId: program,
     keys: [
+      { pubkey: params.issuerPubkey, isSigner: true, isWritable: true },
       { pubkey: assetPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: vaultPda.publicKey, isSigner: false, isWritable: true },
       { pubkey: revenueEpochPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: issuerPubkey, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
     ],
-    data,
+    data: encodePostRevenueData(
+      params.epochNumber,
+      toAtomicUnits(params.amountUsdc, USDC_DECIMALS),
+      reportHashToBuffer(params.reportHash),
+    ),
   });
 }
 
-/**
- * Build the claim_yield instruction for claiming revenue
- */
+export function buildWithdrawInstruction(params: {
+  assetId: string;
+  issuerPubkey: PublicKey;
+  amountUsdc: number;
+  paymentMintPubkey?: PublicKey;
+  tokenProgramPubkey?: PublicKey;
+}): TransactionInstruction {
+  const programId = getProgramId();
+  const paymentMint = params.paymentMintPubkey ?? getUsdcMintPubkey();
+  const tokenProgram = params.tokenProgramPubkey ?? TOKEN_PROGRAM_ID;
+  const assetPda = deriveAssetPDA({ assetId: params.assetId }).publicKey;
+  const vaultPda = deriveVaultPDA({ assetId: params.assetId }).publicKey;
+  const issuerUsdcAccount = getAssociatedTokenAddressSync(
+    paymentMint,
+    params.issuerPubkey,
+    false,
+    tokenProgram,
+  );
+
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: params.issuerPubkey, isSigner: true, isWritable: true },
+      { pubkey: assetPda, isSigner: false, isWritable: true },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: issuerUsdcAccount, isSigner: false, isWritable: true },
+      { pubkey: paymentMint, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram, isSigner: false, isWritable: false },
+    ],
+    data: encodeWithdrawData(toAtomicUnits(params.amountUsdc, USDC_DECIMALS)),
+  });
+}
+
 export function buildClaimYieldInstruction(params: {
   assetId: string;
   claimantPubkey: PublicKey;
   epochNumber: number;
   claimAmountUsdc: number;
+  paymentMintPubkey?: PublicKey;
+  tokenProgramPubkey?: PublicKey;
 }): TransactionInstruction {
   const program = getProgramId();
-  const { assetId, claimantPubkey, epochNumber, claimAmountUsdc } = params;
-
-  // Derive PDAs
-  const assetPda = deriveAssetPDA({ assetId });
-  const vaultPda = deriveVaultPDA({ assetId });
-  const revenueEpochPda = deriveRevenueEpochPDA({ assetId, epochNumber });
-  const claimPda = deriveClaimPDA({ assetId, userPubkey: claimantPubkey, epochNumber });
-  const shareMintPda = deriveShareMintPDA(assetId);
-
-  // Get claimant's share token account (for ownership verification)
-  const claimantShareAccount = getAssociatedTokenAddressSync(
-    shareMintPda.publicKey,
-    claimantPubkey,
+  const paymentMint = params.paymentMintPubkey ?? getUsdcMintPubkey();
+  const tokenProgram = params.tokenProgramPubkey ?? TOKEN_PROGRAM_ID;
+  const assetPda = deriveAssetPDA({ assetId: params.assetId });
+  const vaultPda = deriveVaultPDA({ assetId: params.assetId });
+  const revenueEpochPda = deriveRevenueEpochPDA({
+    assetId: params.assetId,
+    epochNumber: params.epochNumber,
+  });
+  const claimPda = deriveClaimPDA({
+    assetId: params.assetId,
+    userPubkey: params.claimantPubkey,
+    epochNumber: params.epochNumber,
+  });
+  const claimantUsdcAccount = getAssociatedTokenAddressSync(
+    paymentMint,
+    params.claimantPubkey,
+    false,
+    tokenProgram,
   );
-
-  // Build instruction data: discriminator + epoch (u64) + amount (u64)
-  const data = Buffer.alloc(8 + 8 + 8);
-  INSTRUCTION_DISCRIMINATORS.claimYield.copy(data, 0);
-  data.writeBigUInt64LE(BigInt(epochNumber), 8);
-  data.writeBigUInt64LE(BigInt(Math.round(claimAmountUsdc * 1_000_000)), 16);
 
   return new TransactionInstruction({
     programId: program,
     keys: [
-      { pubkey: assetPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: vaultPda.publicKey, isSigner: false, isWritable: true },
+      { pubkey: params.claimantPubkey, isSigner: true, isWritable: true },
+      { pubkey: assetPda.publicKey, isSigner: false, isWritable: false },
       { pubkey: revenueEpochPda.publicKey, isSigner: false, isWritable: true },
       { pubkey: claimPda.publicKey, isSigner: false, isWritable: true },
-      { pubkey: shareMintPda.publicKey, isSigner: false, isWritable: false },
-      { pubkey: claimantPubkey, isSigner: true, isWritable: true },
-      { pubkey: claimantShareAccount, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: vaultPda.publicKey, isSigner: false, isWritable: true },
+      { pubkey: claimantUsdcAccount, isSigner: false, isWritable: true },
+      { pubkey: paymentMint, isSigner: false, isWritable: false },
+      { pubkey: tokenProgram, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
     ],
-    data,
+    data: encodeClaimYieldData(
+      params.epochNumber,
+      toAtomicUnits(params.claimAmountUsdc, USDC_DECIMALS),
+    ),
   });
 }
 
-/**
- * Build a complete transaction payload for client signing
- */
 export async function buildTransactionPayload<T extends TransactionMetadata>(
   operationId: string,
   payer: PublicKey,
@@ -265,17 +460,13 @@ export async function buildTransactionPayload<T extends TransactionMetadata>(
   priorityFee = DEFAULT_PRIORITY_FEE,
   computeUnits = DEFAULT_COMPUTE_UNITS,
 ): Promise<TransactionPayload> {
-  // Add compute budget instructions for priority
   const computeBudgetIxs = createComputeBudgetInstructions(priorityFee, computeUnits);
-  const allInstructions = [...computeBudgetIxs, ...instructions];
-
-  // Build the versioned transaction
-  const transaction = await createVersionedTransaction(allInstructions, payer);
-
-  // Serialize for client
-  const serializedTx = serializeTransaction(transaction);
-
-  // Calculate expiry
+  const transaction = await createVersionedTransaction(
+    [...computeBudgetIxs, ...instructions],
+    payer,
+  );
+  const signedTransaction = maybeSignWithPayer(transaction);
+  const serializedTx = serializeTransaction(signedTransaction);
   const expiresAt = Date.now() + BLOCKHASH_EXPIRY_MS;
 
   log.debug(
@@ -283,7 +474,9 @@ export async function buildTransactionPayload<T extends TransactionMetadata>(
       operationId,
       kind: metadata.kind,
       network: detectNetwork(),
-      instructionCount: allInstructions.length,
+      instructionCount: instructions.length,
+      feePayer: payer.toBase58(),
+      payerPreSigned: payerKeypair !== null,
     },
     "Built transaction payload",
   );
@@ -298,43 +491,144 @@ export async function buildTransactionPayload<T extends TransactionMetadata>(
   };
 }
 
-/**
- * Prepare an investment transaction for client signing
- */
+export async function prepareAssetSetupTransaction(params: {
+  operationId: string;
+  assetId: string;
+  issuerWalletAddress: string;
+  metadataUri: string;
+  totalShares: number;
+  pricePerShareUsdc: number;
+  activateSale: boolean;
+}): Promise<TransactionPayload> {
+  const issuerPubkey = parseWalletPublicKey(params.issuerWalletAddress, "Issuer wallet address");
+  const paymentMint = getUsdcMintPubkey();
+  const tokenProgram = await resolveTokenProgramForMint(paymentMint, "Payment", connection);
+  const instructions = [
+    buildCreateAssetInstruction({
+      assetId: params.assetId,
+      issuerPubkey,
+      metadataUri: params.metadataUri,
+      totalShares: params.totalShares,
+      pricePerShareUsdc: params.pricePerShareUsdc,
+      tokenProgramPubkey: tokenProgram,
+    }),
+  ];
+
+  if (params.activateSale) {
+    instructions.push(
+      buildActivateSaleInstruction({
+        assetId: params.assetId,
+        issuerPubkey,
+      }),
+    );
+  }
+
+  const metadata: AssetSetupMetadata = {
+    kind: "asset_setup",
+    asset_id: params.assetId,
+    metadata_uri: params.metadataUri,
+    total_shares: params.totalShares,
+    price_per_share_usdc: params.pricePerShareUsdc,
+    activate_sale: params.activateSale,
+  };
+
+  return buildTransactionPayload(
+    params.operationId,
+    payerKeypair?.publicKey ?? issuerPubkey,
+    instructions,
+    metadata,
+  );
+}
+
 export async function prepareInvestmentTransaction(params: {
   operationId: string;
   assetId: string;
   investorWalletAddress: string;
   amountUsdc: number;
   sharesToReceive: number;
+  assetPubkey?: string;
+  vaultPubkey?: string;
+  shareMintPubkey?: string;
 }): Promise<TransactionPayload> {
-  const { operationId, assetId, investorWalletAddress, amountUsdc, sharesToReceive } = params;
-
   const investorPubkey = parseWalletPublicKey(
-    investorWalletAddress,
+    params.investorWalletAddress,
     "Investor wallet address",
   );
+  const shareMintPubkey =
+    params.shareMintPubkey !== undefined ? new PublicKey(params.shareMintPubkey) : undefined;
+  const paymentMint = getUsdcMintPubkey();
+  const paymentTokenProgram = await resolveTokenProgramForMint(paymentMint, "Payment", connection);
+  const shareMint = shareMintPubkey ?? deriveShareMintPDA(params.assetId).publicKey;
+  const shareTokenProgram = await resolveTokenProgramForMint(shareMint, "Share", connection);
 
-  const instruction = buildBuySharesInstruction({
-    assetId,
+  if (!shareTokenProgram.equals(paymentTokenProgram)) {
+    throw new ApiError(
+      409,
+      "TOKEN_PROGRAM_MISMATCH",
+      `Share mint uses ${tokenProgramLabel(shareTokenProgram)} but payment mint uses ${tokenProgramLabel(paymentTokenProgram)}`,
+    );
+  }
+
+  const investorShareAccount = getAssociatedTokenAddressSync(
+    shareMint,
     investorPubkey,
-    amountUsdc,
-    sharesToReceive,
-  });
+    false,
+    shareTokenProgram,
+  );
+  const investorUsdcAccount = getAssociatedTokenAddressSync(
+    paymentMint,
+    investorPubkey,
+    false,
+    paymentTokenProgram,
+  );
+  const instructions: TransactionInstruction[] = [
+    createAssociatedTokenAccountIdempotentInstruction(
+      payerKeypair?.publicKey ?? investorPubkey,
+      investorUsdcAccount,
+      investorPubkey,
+      paymentMint,
+      paymentTokenProgram,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ),
+    createAssociatedTokenAccountIdempotentInstruction(
+      payerKeypair?.publicKey ?? investorPubkey,
+      investorShareAccount,
+      investorPubkey,
+      shareMint,
+      shareTokenProgram,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ),
+  ];
+
+  instructions.push(
+    buildBuySharesInstruction({
+      assetId: params.assetId,
+      investorPubkey,
+      amountUsdc: params.amountUsdc,
+      sharesToReceive: params.sharesToReceive,
+      assetPubkey: params.assetPubkey ? new PublicKey(params.assetPubkey) : undefined,
+      vaultPubkey: params.vaultPubkey ? new PublicKey(params.vaultPubkey) : undefined,
+      shareMintPubkey,
+      paymentMintPubkey: paymentMint,
+      tokenProgramPubkey: shareTokenProgram,
+    }),
+  );
 
   const metadata: InvestmentMetadata = {
     kind: "investment",
-    asset_id: assetId,
-    amount_usdc: amountUsdc,
-    shares_to_receive: sharesToReceive,
+    asset_id: params.assetId,
+    amount_usdc: params.amountUsdc,
+    shares_to_receive: params.sharesToReceive,
   };
 
-  return buildTransactionPayload(operationId, investorPubkey, [instruction], metadata);
+  return buildTransactionPayload(
+    params.operationId,
+    payerKeypair?.publicKey ?? investorPubkey,
+    instructions,
+    metadata,
+  );
 }
 
-/**
- * Prepare a revenue posting transaction for issuer signing
- */
 export async function prepareRevenuePostTransaction(params: {
   operationId: string;
   assetId: string;
@@ -343,39 +637,79 @@ export async function prepareRevenuePostTransaction(params: {
   amountUsdc: number;
   reportHash: string;
 }): Promise<TransactionPayload> {
-  const {
-    operationId,
-    assetId,
-    issuerWalletAddress,
-    epochNumber,
-    amountUsdc,
-    reportHash,
-  } = params;
-
-  const issuerPubkey = parseWalletPublicKey(issuerWalletAddress, "Issuer wallet address");
-
+  const issuerPubkey = parseWalletPublicKey(params.issuerWalletAddress, "Issuer wallet address");
   const instruction = buildPostRevenueInstruction({
-    assetId,
+    assetId: params.assetId,
     issuerPubkey,
-    epochNumber,
-    amountUsdc,
-    reportHash,
+    epochNumber: params.epochNumber,
+    amountUsdc: params.amountUsdc,
+    reportHash: params.reportHash,
   });
 
   const metadata: RevenuePostMetadata = {
     kind: "revenue_post",
-    asset_id: assetId,
-    revenue_epoch_id: operationId,
-    epoch_number: epochNumber,
-    amount_usdc: amountUsdc,
+    asset_id: params.assetId,
+    revenue_epoch_id: params.operationId,
+    epoch_number: params.epochNumber,
+    amount_usdc: params.amountUsdc,
   };
 
-  return buildTransactionPayload(operationId, issuerPubkey, [instruction], metadata);
+  return buildTransactionPayload(
+    params.operationId,
+    payerKeypair?.publicKey ?? issuerPubkey,
+    [instruction],
+    metadata,
+  );
 }
 
-/**
- * Prepare a claim transaction for investor signing
- */
+export async function prepareWithdrawTransaction(params: {
+  operationId: string;
+  assetId: string;
+  issuerWalletAddress: string;
+  amountUsdc: number;
+}): Promise<TransactionPayload> {
+  const issuerPubkey = parseWalletPublicKey(params.issuerWalletAddress, "Issuer wallet address");
+  const paymentMint = getUsdcMintPubkey();
+  const tokenProgram = await resolveTokenProgramForMint(paymentMint, "Payment", connection);
+  const issuerUsdcAccount = getAssociatedTokenAddressSync(
+    paymentMint,
+    issuerPubkey,
+    false,
+    tokenProgram,
+  );
+
+  const instructions: TransactionInstruction[] = [
+    createAssociatedTokenAccountIdempotentInstruction(
+      payerKeypair?.publicKey ?? issuerPubkey,
+      issuerUsdcAccount,
+      issuerPubkey,
+      paymentMint,
+      tokenProgram,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ),
+    buildWithdrawInstruction({
+      assetId: params.assetId,
+      issuerPubkey,
+      amountUsdc: params.amountUsdc,
+      paymentMintPubkey: paymentMint,
+      tokenProgramPubkey: tokenProgram,
+    }),
+  ];
+
+  const metadata: WithdrawMetadata = {
+    kind: "withdraw",
+    asset_id: params.assetId,
+    amount_usdc: params.amountUsdc,
+  };
+
+  return buildTransactionPayload(
+    params.operationId,
+    payerKeypair?.publicKey ?? issuerPubkey,
+    instructions,
+    metadata,
+  );
+}
+
 export async function prepareClaimTransaction(params: {
   operationId: string;
   assetId: string;
@@ -384,34 +718,33 @@ export async function prepareClaimTransaction(params: {
   claimAmountUsdc: number;
   revenueEpochId: string;
 }): Promise<TransactionPayload> {
-  const {
-    operationId,
-    assetId,
-    claimantWalletAddress,
-    epochNumber,
-    claimAmountUsdc,
-    revenueEpochId,
-  } = params;
-
   const claimantPubkey = parseWalletPublicKey(
-    claimantWalletAddress,
+    params.claimantWalletAddress,
     "Claimant wallet address",
   );
-
+  const paymentMint = getUsdcMintPubkey();
+  const tokenProgram = await resolveTokenProgramForMint(paymentMint, "Payment", connection);
   const instruction = buildClaimYieldInstruction({
-    assetId,
+    assetId: params.assetId,
     claimantPubkey,
-    epochNumber,
-    claimAmountUsdc,
+    epochNumber: params.epochNumber,
+    claimAmountUsdc: params.claimAmountUsdc,
+    paymentMintPubkey: paymentMint,
+    tokenProgramPubkey: tokenProgram,
   });
 
   const metadata: ClaimMetadata = {
     kind: "claim",
-    asset_id: assetId,
-    revenue_epoch_id: revenueEpochId,
-    epoch_number: epochNumber,
-    claim_amount_usdc: claimAmountUsdc,
+    asset_id: params.assetId,
+    revenue_epoch_id: params.revenueEpochId,
+    epoch_number: params.epochNumber,
+    claim_amount_usdc: params.claimAmountUsdc,
   };
 
-  return buildTransactionPayload(operationId, claimantPubkey, [instruction], metadata);
+  return buildTransactionPayload(
+    params.operationId,
+    payerKeypair?.publicKey ?? claimantPubkey,
+    [instruction],
+    metadata,
+  );
 }

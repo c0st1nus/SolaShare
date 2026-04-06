@@ -1,12 +1,12 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { PublicKey } from "@solana/web3.js";
-import { sign } from "tweetnacl";
 import { and, eq, isNull, lt } from "drizzle-orm";
+import { sign } from "tweetnacl";
 import { db } from "../../db";
 import { walletChallenges } from "../../db/schema";
-import { challengeSecret, challengeExpirySeconds } from "./config";
-import type { WalletChallenge, ChallengeVerificationResult } from "./types";
 import { logger } from "../logger";
+import { challengeExpirySeconds, challengeSecret } from "./config";
+import type { ChallengeVerificationResult, WalletChallenge } from "./types";
 
 const log = logger.child({ module: "wallet-challenge" });
 
@@ -115,20 +115,14 @@ export async function verifyWalletSignature(
       .set({ status: "expired", updatedAt: new Date() })
       .where(eq(walletChallenges.id, storedChallenge.id));
 
-    log.warn(
-      { walletAddress: walletPubkey, nonce: nonce.slice(0, 8) },
-      "Challenge expired",
-    );
+    log.warn({ walletAddress: walletPubkey, nonce: nonce.slice(0, 8) }, "Challenge expired");
     return errorResult("Challenge has expired");
   }
 
   // Verify the challenge hash matches what we stored
   const expectedHash = hashChallenge(challenge);
   if (expectedHash !== storedChallenge.challengeHash) {
-    log.warn(
-      { walletAddress: walletPubkey, nonce: nonce.slice(0, 8) },
-      "Challenge hash mismatch",
-    );
+    log.warn({ walletAddress: walletPubkey, nonce: nonce.slice(0, 8) }, "Challenge hash mismatch");
     return errorResult("Challenge has been tampered with");
   }
 
@@ -138,24 +132,14 @@ export async function verifyWalletSignature(
     const signatureBytes = Buffer.from(signatureBase64, "base64");
     const messageBytes = new TextEncoder().encode(challenge);
 
-    signatureValid = sign.detached.verify(
-      messageBytes,
-      signatureBytes,
-      pubkey.toBytes(),
-    );
+    signatureValid = sign.detached.verify(messageBytes, signatureBytes, pubkey.toBytes());
   } catch (err) {
-    log.warn(
-      { err, walletAddress: walletPubkey },
-      "Signature verification error",
-    );
+    log.warn({ err, walletAddress: walletPubkey }, "Signature verification error");
     return errorResult("Signature verification failed");
   }
 
   if (!signatureValid) {
-    log.warn(
-      { walletAddress: walletPubkey, nonce: nonce.slice(0, 8) },
-      "Invalid signature",
-    );
+    log.warn({ walletAddress: walletPubkey, nonce: nonce.slice(0, 8) }, "Invalid signature");
     return errorResult("Signature does not match wallet");
   }
 
@@ -188,12 +172,7 @@ export async function cleanupExpiredChallenges(): Promise<number> {
   const result = await db
     .update(walletChallenges)
     .set({ status: "expired", updatedAt: new Date() })
-    .where(
-      and(
-        eq(walletChallenges.status, "pending"),
-        lt(walletChallenges.expiresAt, new Date()),
-      ),
-    );
+    .where(and(eq(walletChallenges.status, "pending"), lt(walletChallenges.expiresAt, new Date())));
 
   const count = Array.isArray(result) ? result.length : 0;
   if (count > 0) {
@@ -205,11 +184,7 @@ export async function cleanupExpiredChallenges(): Promise<number> {
 /**
  * Build the challenge message that the wallet will sign
  */
-function buildChallengeMessage(
-  walletAddress: string,
-  nonce: string,
-  operation: string,
-): string {
+function buildChallengeMessage(walletAddress: string, nonce: string, operation: string): string {
   const timestamp = Math.floor(Date.now() / 1000);
   return `${CHALLENGE_PREFIX}\n\nWallet: ${walletAddress}\nOperation: ${operation}\nNonce: ${nonce}\nTimestamp: ${timestamp}`;
 }

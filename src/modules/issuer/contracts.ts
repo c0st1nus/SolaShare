@@ -1,4 +1,24 @@
 import { z } from "zod";
+
+export const withdrawFundsBodySchema = z.object({
+  amount_usdc: z
+    .number()
+    .min(10)
+    .describe("Amount in USDC to withdraw (minimum 10)"),
+});
+
+export const withdrawFundsResponseSchema = z.object({
+  success: z.literal(true),
+  operation_id: z.string(),
+  serialized_tx: z.string(),
+  expires_at: z.number(),
+  network: z.enum(["devnet", "mainnet", "localnet"]),
+  metadata: z.object({
+    kind: z.literal("withdraw"),
+    asset_id: z.string(),
+    amount_usdc: z.number(),
+  }),
+});
 import {
   idParamSchema,
   isoDateTimeSchema,
@@ -88,6 +108,14 @@ export const revenueEpochResponseSchema = successResponseSchema.extend({
   revenue_epoch_id: uuidSchema,
 });
 
+export const assetOnchainSetupBodySchema = z.object({
+  metadata_uri: z.string().url().optional(),
+});
+
+export const assetOnchainSetupConfirmBodySchema = z.object({
+  transaction_signature: z.string().min(32),
+});
+
 export const issuerActionParamsSchema = idParamSchema;
 
 export const issuerAssetListItemSchema = z.object({
@@ -164,7 +192,13 @@ export const issuerAssetDetailSchema = z.object({
       price_per_share_usdc: numericStringSchema,
       minimum_buy_amount_usdc: numericStringSchema,
       target_raise_usdc: numericStringSchema,
-      sale_status: z.enum(["draft", "scheduled", "live", "completed", "cancelled"]),
+      sale_status: z.enum([
+        "draft",
+        "scheduled",
+        "live",
+        "completed",
+        "cancelled",
+      ]),
     })
     .nullable(),
   documents: z.array(
@@ -198,4 +232,24 @@ export const revenuePostMetadataSchema = z.object({
 
 export const revenuePostResponseSchema = transactionPayloadSchema.extend({
   metadata: revenuePostMetadataSchema,
+});
+
+export const assetSetupMetadataSchema = z.object({
+  kind: z.literal("asset_setup"),
+  asset_id: uuidSchema,
+  metadata_uri: z.string().url(),
+  total_shares: z.number().int().positive(),
+  price_per_share_usdc: z.number().positive(),
+  activate_sale: z.boolean(),
+});
+
+export const assetOnchainSetupResponseSchema = transactionPayloadSchema.extend({
+  metadata: assetSetupMetadataSchema,
+});
+
+export const assetOnchainConfirmResponseSchema = successResponseSchema.extend({
+  asset_id: uuidSchema,
+  onchain_asset_pubkey: z.string(),
+  share_mint_pubkey: z.string(),
+  vault_pubkey: z.string(),
 });

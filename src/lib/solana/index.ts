@@ -2,98 +2,98 @@
 // Re-exports all public APIs
 
 export {
+  challengeExpirySeconds,
+  challengeSecret,
+  commitment,
   connection,
+  getUsdcMintAddress,
   payerKeypair,
   programId,
-  challengeSecret,
-  challengeExpirySeconds,
-  commitment,
 } from "./config";
-
-export type {
-  PdaDerivation,
-  WalletChallenge,
-  ChallengeVerificationResult,
-  AssetAccountSeeds,
-  VaultSeeds,
-  RevenueEpochSeeds,
-  ClaimSeeds,
-} from "./types";
-
+// Indexer
 export {
-  getLatestBlockhash,
-  createVersionedTransaction,
-  createComputeBudgetInstructions,
-  signTransaction,
-  serializeTransaction,
-  deserializeTransaction,
-  sendAndConfirmTransaction,
-} from "./utils";
-
+  getIndexerStatus,
+  handleWebhookTransaction,
+  type IndexedTransaction,
+  type IndexerConfig,
+  type IndexerStatus,
+  startPollingIndexer,
+  stopPollingIndexer,
+  syncTransaction,
+  type WebhookTransactionPayload,
+} from "./indexer";
 export {
   deriveAssetPDA,
-  deriveVaultPDA,
-  deriveRevenueEpochPDA,
   deriveClaimPDA,
+  deriveRevenueEpochPDA,
   deriveShareMintPDA,
+  deriveVaultPDA,
 } from "./pda";
-
-export {
-  generateWalletChallenge,
-  verifyWalletSignature,
-  cleanupExpiredChallenges,
-} from "./wallet-challenge";
-
 export type {
-  TransactionPayload,
-  TransactionMetadata,
+  AssetSetupMetadata,
+  ClaimMetadata,
   InvestmentMetadata,
   RevenuePostMetadata,
-  ClaimMetadata,
+  TransactionMetadata,
+  TransactionPayload,
 } from "./transactions";
-
 export {
+  buildActivateSaleInstruction,
   buildBuySharesInstruction,
-  buildPostRevenueInstruction,
   buildClaimYieldInstruction,
+  buildCreateAssetInstruction,
+  buildPostRevenueInstruction,
   buildTransactionPayload,
+  prepareAssetSetupTransaction,
+  prepareClaimTransaction,
   prepareInvestmentTransaction,
   prepareRevenuePostTransaction,
-  prepareClaimTransaction,
 } from "./transactions";
+export type {
+  AssetAccountSeeds,
+  ChallengeVerificationResult,
+  ClaimSeeds,
+  PdaDerivation,
+  RevenueEpochSeeds,
+  VaultSeeds,
+  WalletChallenge,
+} from "./types";
+export {
+  createComputeBudgetInstructions,
+  createVersionedTransaction,
+  deserializeTransaction,
+  getLatestBlockhash,
+  sendAndConfirmTransaction,
+  serializeTransaction,
+  signTransaction,
+} from "./utils";
 
 // Verification
 export type {
-  VerificationErrorCode,
-  VerificationError,
-  VerificationSuccess,
-  VerificationResult,
-  InvestmentVerificationParams,
+  AssetSetupVerificationParams,
   ClaimVerificationParams,
+  InvestmentVerificationParams,
   RevenuePostVerificationParams,
+  VerificationError,
+  VerificationErrorCode,
+  VerificationResult,
+  VerificationSuccess,
 } from "./verification";
 
 export {
-  isValidSignature,
   fetchAndVerifyTransaction,
   fetchAndVerifyTransactionWithRetry,
-  verifyTransactionSigner,
-  verifyProgramInvoked,
+  isValidSignature,
   verifyAccountsMatch,
-  verifyInvestmentTransaction,
+  verifyAssetSetupTransaction,
   verifyClaimTransaction,
+  verifyInvestmentTransaction,
+  verifyProgramInvoked,
   verifyRevenuePostTransaction,
+  verifyTransactionSigner,
 } from "./verification";
-
-// Indexer
 export {
-  startPollingIndexer,
-  stopPollingIndexer,
-  getIndexerStatus,
-  handleWebhookTransaction,
-  syncTransaction,
-  type IndexerConfig,
-  type IndexerStatus,
-  type IndexedTransaction,
-  type WebhookTransactionPayload,
-} from "./indexer";
+  cleanupExpiredChallenges,
+  generateWalletChallenge,
+  verifyWalletSignature,
+} from "./wallet-challenge";

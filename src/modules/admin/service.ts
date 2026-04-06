@@ -132,11 +132,15 @@ export class AdminService {
           reason: decision.reason ?? null,
           created_at: decision.createdAt.toISOString(),
           issues:
-            ((decision.metadataJson ?? {}) as { issues?: AdminAssetDetailResponse["review_feedback"] extends infer T
-              ? T extends { issues: infer U }
-                ? U
-                : never
-              : never }).issues ?? [],
+            (
+              (decision.metadataJson ?? {}) as {
+                issues?: AdminAssetDetailResponse["review_feedback"] extends infer T
+                  ? T extends { issues: infer U }
+                    ? U
+                    : never
+                  : never;
+              }
+            ).issues ?? [],
         };
       })(),
       db

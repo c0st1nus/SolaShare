@@ -87,6 +87,12 @@ export const app = new Elysia()
 
     set.status = status;
 
+    if (!(error instanceof Error) && code !== "VALIDATION") {
+      console.error("UNKNOWN ERROR CAUGHT BY ELYSIA:", error);
+    } else {
+      console.error("ERROR CAUGHT BY ELYSIA:", error);
+    }
+
     return {
       error: {
         code:
@@ -102,7 +108,10 @@ export const app = new Elysia()
             ? "Request validation failed"
             : error instanceof Error
               ? error.message
-              : "Unexpected error",
+              : typeof error === "string"
+                ? error
+                : `Unexpected error: ${JSON.stringify(error) || "unknown"}`,
+        debug_error: error,
       },
     };
   });

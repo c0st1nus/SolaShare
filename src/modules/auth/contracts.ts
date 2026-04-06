@@ -140,3 +140,11 @@ export const walletVerifyResponseSchema = z.object({
   verified: z.boolean(),
   error: z.string().optional(),
 });
+
+export const walletUnlinkResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+
+export type WalletVerifyResponse = z.infer<typeof walletVerifyResponseSchema>;
+export type WalletUnlinkResponse = z.infer<typeof walletUnlinkResponseSchema>;

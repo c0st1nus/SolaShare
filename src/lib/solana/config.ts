@@ -1,4 +1,4 @@
-import { Connection, Keypair, type Commitment } from "@solana/web3.js";
+import { type Commitment, Connection, Keypair } from "@solana/web3.js";
 import { env } from "../../config/env";
 import { logger } from "../logger";
 
@@ -17,14 +17,10 @@ export const payerKeypair: Keypair | null = (() => {
   }
 
   try {
-    const secretKey = Uint8Array.from(
-      Buffer.from(env.SOLANA_PAYER_KEY, "base64"),
-    );
+    const secretKey = Uint8Array.from(Buffer.from(env.SOLANA_PAYER_KEY, "base64"));
     return Keypair.fromSecretKey(secretKey);
   } catch {
-    log.warn(
-      "Failed to parse SOLANA_PAYER_KEY as base64, trying JSON array format",
-    );
+    log.warn("Failed to parse SOLANA_PAYER_KEY as base64, trying JSON array format");
     try {
       const parsed = JSON.parse(env.SOLANA_PAYER_KEY);
       if (Array.isArray(parsed)) {
@@ -32,10 +28,7 @@ export const payerKeypair: Keypair | null = (() => {
       }
       throw new Error("SOLANA_PAYER_KEY is not a valid array");
     } catch (err) {
-      log.error(
-        { err },
-        "Failed to parse SOLANA_PAYER_KEY, payer keypair unavailable",
-      );
+      log.error({ err }, "Failed to parse SOLANA_PAYER_KEY, payer keypair unavailable");
       return null;
     }
   }
@@ -43,6 +36,11 @@ export const payerKeypair: Keypair | null = (() => {
 
 /** Program ID for the SolaShare on-chain program */
 export const programId: string | null = env.SOLANA_PROGRAM_ID ?? null;
+
+/** Payment mint used for investment and revenue flows (USDC on devnet/localnet/mainnet) */
+export function getUsdcMintAddress(): string | null {
+  return env.SOLANA_USDC_MINT_ADDRESS ?? null;
+}
 
 /** Secret used for HMAC-signing wallet challenges */
 export const challengeSecret: string = env.CHALLENGE_SECRET;
@@ -59,6 +57,7 @@ log.info(
     commitment: env.SOLANA_COMMITMENT,
     hasPayer: payerKeypair !== null,
     hasProgramId: programId !== null,
+    hasUsdcMint: getUsdcMintAddress() !== null,
   },
   "Solana config initialized",
 );

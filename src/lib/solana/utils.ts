@@ -7,7 +7,7 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
-import { connection, commitment } from "./config";
+import { commitment, connection } from "./config";
 
 /**
  * Get the latest blockhash with configured commitment
@@ -64,18 +64,14 @@ export function signTransaction(
 /**
  * Serialize a transaction for client signing
  */
-export function serializeTransaction(
-  transaction: VersionedTransaction,
-): string {
+export function serializeTransaction(transaction: VersionedTransaction): string {
   return Buffer.from(transaction.serialize()).toString("base64");
 }
 
 /**
  * Deserialize a transaction from base64
  */
-export function deserializeTransaction(
-  base64Transaction: string,
-): VersionedTransaction {
+export function deserializeTransaction(base64Transaction: string): VersionedTransaction {
   const buffer = Buffer.from(base64Transaction, "base64");
   return VersionedTransaction.deserialize(buffer);
 }

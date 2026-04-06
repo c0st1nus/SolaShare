@@ -71,7 +71,9 @@ export class ClaimsService {
         db
           .select()
           .from(walletBindings)
-          .where(and(eq(walletBindings.userId, currentUser.id), eq(walletBindings.status, "active")))
+          .where(
+            and(eq(walletBindings.userId, currentUser.id), eq(walletBindings.status, "active")),
+          )
           .limit(1),
       ]);
     const holding = holdingsRows[0];

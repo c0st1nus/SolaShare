@@ -14,22 +14,17 @@ import { meService } from "./service";
 
 export const meRoutes = new Elysia({ prefix: "/me", tags: ["Investor"] })
   .use(authPlugin)
-  .get(
-    "/profile",
-    ({ auth }) => meService.getProfile(requireAuthenticatedUser(auth).id),
-    {
-      detail: {
-        summary: "Get the authenticated user profile",
-      },
-      response: {
-        200: meProfileResponseSchema,
-      },
+  .get("/profile", ({ auth }) => meService.getProfile(requireAuthenticatedUser(auth).id), {
+    detail: {
+      summary: "Get the authenticated user profile",
     },
-  )
+    response: {
+      200: meProfileResponseSchema,
+    },
+  })
   .patch(
     "/profile",
-    ({ auth, body }) =>
-      meService.updateProfile(requireAuthenticatedUser(auth).id, body),
+    ({ auth, body }) => meService.updateProfile(requireAuthenticatedUser(auth).id, body),
     {
       body: meProfileUpdateBodySchema,
       detail: {
@@ -40,22 +35,17 @@ export const meRoutes = new Elysia({ prefix: "/me", tags: ["Investor"] })
       },
     },
   )
-  .get(
-    "/kyc",
-    ({ auth }) => meService.getKycOverview(requireAuthenticatedUser(auth).id),
-    {
-      detail: {
-        summary: "Get the authenticated user KYC workflow state",
-      },
-      response: {
-        200: meKycOverviewResponseSchema,
-      },
+  .get("/kyc", ({ auth }) => meService.getKycOverview(requireAuthenticatedUser(auth).id), {
+    detail: {
+      summary: "Get the authenticated user KYC workflow state",
     },
-  )
+    response: {
+      200: meKycOverviewResponseSchema,
+    },
+  })
   .post(
     "/kyc/submit",
-    ({ auth, body }) =>
-      meService.submitKyc(requireAuthenticatedUser(auth).id, body),
+    ({ auth, body }) => meService.submitKyc(requireAuthenticatedUser(auth).id, body),
     {
       body: meKycSubmitBodySchema,
       detail: {
@@ -66,39 +56,27 @@ export const meRoutes = new Elysia({ prefix: "/me", tags: ["Investor"] })
       },
     },
   )
-  .post(
-    "/kyc/cancel",
-    ({ auth }) => meService.cancelKyc(requireAuthenticatedUser(auth).id),
-    {
-      detail: {
-        summary: "Cancel the latest pending KYC submission",
-      },
-      response: {
-        200: meKycCancelResponseSchema,
-      },
+  .post("/kyc/cancel", ({ auth }) => meService.cancelKyc(requireAuthenticatedUser(auth).id), {
+    detail: {
+      summary: "Cancel the latest pending KYC submission",
     },
-  )
-  .get(
-    "/portfolio",
-    ({ auth }) => meService.getPortfolio(requireAuthenticatedUser(auth).id),
-    {
-      detail: {
-        summary: "Get authenticated investor portfolio",
-      },
-      response: {
-        200: mePortfolioResponseSchema,
-      },
+    response: {
+      200: meKycCancelResponseSchema,
     },
-  )
-  .get(
-    "/claims",
-    ({ auth }) => meService.getClaims(requireAuthenticatedUser(auth).id),
-    {
-      detail: {
-        summary: "Get authenticated investor claim history",
-      },
-      response: {
-        200: meClaimsResponseSchema,
-      },
+  })
+  .get("/portfolio", ({ auth }) => meService.getPortfolio(requireAuthenticatedUser(auth).id), {
+    detail: {
+      summary: "Get authenticated investor portfolio",
     },
-  );
+    response: {
+      200: mePortfolioResponseSchema,
+    },
+  })
+  .get("/claims", ({ auth }) => meService.getClaims(requireAuthenticatedUser(auth).id), {
+    detail: {
+      summary: "Get authenticated investor claim history",
+    },
+    response: {
+      200: meClaimsResponseSchema,
+    },
+  });

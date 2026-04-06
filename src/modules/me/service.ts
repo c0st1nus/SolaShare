@@ -34,18 +34,11 @@ type MeKycOverviewResponse = z.infer<typeof meKycOverviewResponseSchema>;
 type MeKycSubmitBody = z.infer<typeof meKycSubmitBodySchema>;
 type MeKycSubmitResponse = z.infer<typeof meKycSubmitResponseSchema>;
 
-const toNumber = (value: string | number | null | undefined) =>
-  Number(value ?? 0);
+const toNumber = (value: string | number | null | undefined) => Number(value ?? 0);
 
 export class MeService {
-  private async loadProfile(
-    userId: string,
-  ): Promise<MeProfileResponse["user"]> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+  private async loadProfile(userId: string): Promise<MeProfileResponse["user"]> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -70,9 +63,9 @@ export class MeService {
       role: user.role,
       kyc_status: user.kycStatus,
       wallet_address: user.walletAddress ?? null,
-      auth_providers: [
-        ...new Set(providerRows.map((row) => row.provider)),
-      ].sort() as Array<"password" | "google" | "telegram">,
+      auth_providers: [...new Set(providerRows.map((row) => row.provider))].sort() as Array<
+        "password" | "google" | "telegram"
+      >,
     };
   }
 
@@ -83,11 +76,7 @@ export class MeService {
   }
 
   async getKycOverview(userId: string): Promise<MeKycOverviewResponse> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -142,15 +131,8 @@ export class MeService {
     };
   }
 
-  async updateProfile(
-    userId: string,
-    input: MeProfileUpdateBody,
-  ): Promise<MeProfileResponse> {
-    const [existingUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+  async updateProfile(userId: string, input: MeProfileUpdateBody): Promise<MeProfileResponse> {
+    const [existingUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!existingUser) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -160,12 +142,7 @@ export class MeService {
       .update(users)
       .set({
         displayName: input.display_name ?? existingUser.displayName,
-        bio:
-          input.bio === undefined
-            ? existingUser.bio
-            : input.bio === null
-              ? null
-              : input.bio,
+        bio: input.bio === undefined ? existingUser.bio : input.bio === null ? null : input.bio,
         avatarUrl:
           input.avatar_url === undefined
             ? existingUser.avatarUrl
@@ -191,34 +168,19 @@ export class MeService {
     return this.getProfile(userId);
   }
 
-  async submitKyc(
-    userId: string,
-    input: MeKycSubmitBody,
-  ): Promise<MeKycSubmitResponse> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+  async submitKyc(userId: string, input: MeKycSubmitBody): Promise<MeKycSubmitResponse> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
     }
 
     if (user.kycStatus === "approved") {
-      throw new ApiError(
-        409,
-        "KYC_ALREADY_APPROVED",
-        "KYC is already approved",
-      );
+      throw new ApiError(409, "KYC_ALREADY_APPROVED", "KYC is already approved");
     }
 
     if (user.kycStatus === "pending") {
-      throw new ApiError(
-        409,
-        "KYC_ALREADY_PENDING",
-        "KYC review is already pending",
-      );
+      throw new ApiError(409, "KYC_ALREADY_PENDING", "KYC review is already pending");
     }
 
     const verificationRequest = await db.transaction(async (tx) => {
@@ -275,11 +237,7 @@ export class MeService {
   }
 
   async cancelKyc(userId: string): Promise<MeKycCancelResponse> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
@@ -360,54 +318,42 @@ export class MeService {
 
     const userAssetIds = positions.map((p) => p.assetId);
 
-    const [
-      investedAggregate,
-      claimedAggregate,
-      revenueRows,
-      claimedByAssetRows,
-    ] = await Promise.all([
-      db
-        .select({
-          total: sql<string>`coalesce(sum(${investments.amountUsdc}), 0)`,
-        })
-        .from(investments)
-        .where(
-          and(
-            eq(investments.userId, userId),
-            eq(investments.status, "confirmed"),
-          ),
-        ),
-      db
-        .select({
-          total: sql<string>`coalesce(sum(${claims.claimAmountUsdc}), 0)`,
-        })
-        .from(claims)
-        .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
-      userAssetIds.length > 0
-        ? db
-            .select({
-              assetId: revenueEpochs.assetId,
-              distributableRevenueUsdc: revenueEpochs.distributableRevenueUsdc,
-            })
-            .from(revenueEpochs)
-            .where(
-              and(
-                inArray(revenueEpochs.assetId, userAssetIds),
-                or(
-                  eq(revenueEpochs.status, "posted"),
-                  eq(revenueEpochs.status, "settled"),
+    const [investedAggregate, claimedAggregate, revenueRows, claimedByAssetRows] =
+      await Promise.all([
+        db
+          .select({
+            total: sql<string>`coalesce(sum(${investments.amountUsdc}), 0)`,
+          })
+          .from(investments)
+          .where(and(eq(investments.userId, userId), eq(investments.status, "confirmed"))),
+        db
+          .select({
+            total: sql<string>`coalesce(sum(${claims.claimAmountUsdc}), 0)`,
+          })
+          .from(claims)
+          .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
+        userAssetIds.length > 0
+          ? db
+              .select({
+                assetId: revenueEpochs.assetId,
+                distributableRevenueUsdc: revenueEpochs.distributableRevenueUsdc,
+              })
+              .from(revenueEpochs)
+              .where(
+                and(
+                  inArray(revenueEpochs.assetId, userAssetIds),
+                  or(eq(revenueEpochs.status, "posted"), eq(revenueEpochs.status, "settled")),
                 ),
-              ),
-            )
-        : Promise.resolve([]),
-      db
-        .select({
-          assetId: claims.assetId,
-          claimAmountUsdc: claims.claimAmountUsdc,
-        })
-        .from(claims)
-        .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
-    ]);
+              )
+          : Promise.resolve([]),
+        db
+          .select({
+            assetId: claims.assetId,
+            claimAmountUsdc: claims.claimAmountUsdc,
+          })
+          .from(claims)
+          .where(and(eq(claims.userId, userId), eq(claims.status, "confirmed"))),
+      ]);
 
     const revenueByAsset = new Map<string, number>();
     const claimedByAsset = new Map<string, number>();
@@ -423,8 +369,7 @@ export class MeService {
     for (const claimedRow of claimedByAssetRows) {
       claimedByAsset.set(
         claimedRow.assetId,
-        (claimedByAsset.get(claimedRow.assetId) ?? 0) +
-          toNumber(claimedRow.claimAmountUsdc),
+        (claimedByAsset.get(claimedRow.assetId) ?? 0) + toNumber(claimedRow.claimAmountUsdc),
       );
     }
 
@@ -433,12 +378,8 @@ export class MeService {
       const grossEntitlement = roundMoney(
         (revenueByAsset.get(position.assetId) ?? 0) * sharesPercentage,
       );
-      const confirmedClaims = roundMoney(
-        claimedByAsset.get(position.assetId) ?? 0,
-      );
-      const unclaimedUsdc = roundMoney(
-        Math.max(grossEntitlement - confirmedClaims, 0),
-      );
+      const confirmedClaims = roundMoney(claimedByAsset.get(position.assetId) ?? 0);
+      const unclaimedUsdc = roundMoney(Math.max(grossEntitlement - confirmedClaims, 0));
 
       return {
         asset_id: position.assetId,
@@ -453,10 +394,7 @@ export class MeService {
       total_invested_usdc: toNumber(investedAggregate[0]?.total),
       total_claimed_usdc: toNumber(claimedAggregate[0]?.total),
       total_unclaimed_usdc: roundMoney(
-        mappedPositions.reduce(
-          (sum, position) => sum + position.unclaimed_usdc,
-          0,
-        ),
+        mappedPositions.reduce((sum, position) => sum + position.unclaimed_usdc, 0),
       ),
       positions: mappedPositions,
     };

@@ -1,6 +1,15 @@
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
+import { z } from "zod";
+import {
+  withdrawFundsBodySchema,
+  withdrawFundsResponseSchema,
+} from "./contracts";
 import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
+  assetOnchainConfirmResponseSchema,
+  assetOnchainSetupBodySchema,
+  assetOnchainSetupConfirmBodySchema,
+  assetOnchainSetupResponseSchema,
   issuerActionParamsSchema,
   issuerAssetBodySchema,
   issuerAssetDetailSchema,
@@ -25,7 +34,10 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .get(
     "/assets",
     ({ auth, query }) =>
-      issuerService.listOwnedAssets(requireUserRole(auth, ["investor", "issuer", "admin"]), query),
+      issuerService.listOwnedAssets(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        query,
+      ),
     {
       query: issuerAssetListQuerySchema,
       detail: {
@@ -39,7 +51,10 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets",
     ({ auth, body }) =>
-      issuerService.createAssetDraft(requireUserRole(auth, ["investor", "issuer", "admin"]), body),
+      issuerService.createAssetDraft(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        body,
+      ),
     {
       body: issuerAssetBodySchema,
       detail: {
@@ -142,6 +157,45 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
     },
   )
   .post(
+    "/assets/:id/onchain/setup",
+    ({ auth, params, body }) =>
+      issuerService.prepareOnchainSetup(
+        requireUserRole(auth, ["issuer", "admin"]),
+        params.id,
+        body,
+      ),
+    {
+      params: issuerActionParamsSchema,
+      body: assetOnchainSetupBodySchema,
+      detail: {
+        summary: "Prepare on-chain asset initialization for issuer signing",
+      },
+      response: {
+        200: assetOnchainSetupResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/assets/:id/onchain/confirm",
+    ({ auth, params, body }) =>
+      issuerService.confirmOnchainSetup(
+        requireUserRole(auth, ["issuer", "admin"]),
+        params.id,
+        body,
+      ),
+    {
+      params: issuerActionParamsSchema,
+      body: assetOnchainSetupConfirmBodySchema,
+      detail: {
+        summary:
+          "Confirm on-chain asset initialization and persist derived pubkeys",
+      },
+      response: {
+        200: assetOnchainConfirmResponseSchema,
+      },
+    },
+  )
+  .post(
     "/assets/:id/revenue-epochs",
     ({ auth, params, body }) => {
       return issuerService.createRevenueEpoch(
@@ -177,6 +231,27 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
       },
       response: {
         200: revenuePostResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/assets/:id/withdraw",
+    async ({ auth, params, body }) => {
+      const payload = await issuerService.prepareWithdrawal(
+        requireUserRole(auth, ["issuer", "admin"]),
+        params.id,
+        body,
+      );
+      return payload as unknown as z.infer<typeof withdrawFundsResponseSchema>;
+    },
+    {
+      params: issuerActionParamsSchema,
+      body: withdrawFundsBodySchema,
+      detail: {
+        summary: "Prepare withdrawal of raised funds",
+      },
+      response: {
+        200: withdrawFundsResponseSchema,
       },
     },
   );

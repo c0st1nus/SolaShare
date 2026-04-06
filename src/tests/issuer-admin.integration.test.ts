@@ -12,7 +12,12 @@ import {
 import { ApiError } from "../lib/api-error";
 import { adminService } from "../modules/admin/service";
 import { issuerService } from "../modules/issuer/service";
-import { createAssetDraftFixture, createUser, resetTestState } from "./helpers";
+import {
+  createActiveWalletBinding,
+  createAssetDraftFixture,
+  createUser,
+  resetTestState,
+} from "./helpers";
 
 describe("issuer and admin integration", () => {
   beforeEach(async () => {
@@ -220,5 +225,33 @@ describe("issuer and admin integration", () => {
     expect(statusRows.some((row) => row.newStatus === "closed")).toBe(true);
     expect(auditRows.some((row) => row.action === "asset.frozen")).toBe(true);
     expect(auditRows.some((row) => row.action === "asset.closed")).toBe(true);
+  });
+
+  it("prepares on-chain asset setup for a verified asset with issuer wallet binding", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-onchain-prepare",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "admin-onchain-prepare",
+    });
+    await createActiveWalletBinding(issuer.id);
+
+    const createdAsset = await createAssetDraftFixture(issuer);
+    await issuerService.submitAssetForWorkflow(issuer, createdAsset.asset_id);
+    await adminService.verifyAsset(admin, createdAsset.asset_id, {
+      outcome: "approved",
+      reason: "Approved",
+      issues: [],
+    });
+
+    const payload = await issuerService.prepareOnchainSetup(issuer, createdAsset.asset_id, {
+      metadata_uri: "https://example.com/metadata/asset.json",
+    });
+
+    expect(payload.metadata.kind).toBe("asset_setup");
+    expect(payload.metadata.asset_id).toBe(createdAsset.asset_id);
+    expect(payload.metadata.activate_sale).toBe(false);
   });
 });

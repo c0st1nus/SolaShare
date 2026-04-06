@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Phase 3 Verification Test Script
- * 
+ *
  * Tests the on-chain verification flow:
  * 1. Signature format validation
  * 2. Transaction fetch from RPC
@@ -9,26 +9,26 @@
  * 4. Program verification
  * 5. PDA account verification
  * 6. Idempotency
- * 
+ *
  * Run with: bun run scripts/test-verification.ts
  */
 
 import {
   Keypair,
+  LAMPORTS_PER_SOL,
   PublicKey,
   SystemProgram,
-  Transaction,
   sendAndConfirmTransaction,
-  LAMPORTS_PER_SOL,
+  Transaction,
 } from "@solana/web3.js";
-import {
-  isValidSignature,
-  fetchAndVerifyTransaction,
-  verifyTransactionSigner,
-  verifyProgramInvoked,
-  verifyInvestmentTransaction,
-} from "../src/lib/solana/verification";
 import { connection, programId } from "../src/lib/solana/config";
+import {
+  fetchAndVerifyTransaction,
+  isValidSignature,
+  verifyInvestmentTransaction,
+  verifyProgramInvoked,
+  verifyTransactionSigner,
+} from "../src/lib/solana/verification";
 
 // ANSI colors for output
 const GREEN = "\x1b[32m";
@@ -107,7 +107,8 @@ async function testSignatureValidation() {
   log.section("Signature Format Validation");
 
   // Valid signatures (base58, 64 bytes = 87-88 chars)
-  const validSig = "2LLK3CKWxHaZnSgHvxAphDWMF9SVUUjcuFYjy1xXMmNsKMcvSJgga1UkEdvg17vJJQrjY6fNBuDWpfgwoA5WMiMD";
+  const validSig =
+    "2LLK3CKWxHaZnSgHvxAphDWMF9SVUUjcuFYjy1xXMmNsKMcvSJgga1UkEdvg17vJJQrjY6fNBuDWpfgwoA5WMiMD";
   assert(isValidSignature(validSig), "Valid 87-char signature accepted");
 
   // Invalid signatures
@@ -130,7 +131,7 @@ async function testTransactionFetch() {
   const invalidResult = await fetchAndVerifyTransaction("invalid");
   assert(
     "code" in invalidResult && invalidResult.code === "SIGNATURE_INVALID",
-    "Invalid signature format returns SIGNATURE_INVALID"
+    "Invalid signature format returns SIGNATURE_INVALID",
   );
 
   // Test with valid format but non-existent transaction
@@ -138,18 +139,24 @@ async function testTransactionFetch() {
   const notFoundResult = await fetchAndVerifyTransaction(nonExistentSig);
   assert(
     "code" in notFoundResult && notFoundResult.code === "TX_NOT_FOUND",
-    "Non-existent transaction returns TX_NOT_FOUND"
+    "Non-existent transaction returns TX_NOT_FOUND",
   );
 
   // Test with a real transaction from surfpool (genesis airdrop)
   // This signature was shown in surfpool startup logs
-  const realSig = "2LLK3CKWxHaZnSgHvxAphDWMF9SVUUjcuFYjy1xXMmNsKMcvSJgga1UkEdvg17vJJQrjY6fNBuDWpfgwoA5WMiMD";
+  const realSig =
+    "2LLK3CKWxHaZnSgHvxAphDWMF9SVUUjcuFYjy1xXMmNsKMcvSJgga1UkEdvg17vJJQrjY6fNBuDWpfgwoA5WMiMD";
   const realResult = await fetchAndVerifyTransaction(realSig);
-  
+
   if ("tx" in realResult) {
     log.success(`Real transaction fetched successfully`);
     log.info(`Slot: ${realResult.slot}`);
-    log.info(`Signers: ${realResult.tx.transaction.message.accountKeys.filter(a => a.signer).map(a => a.pubkey.toBase58()).join(", ")}`);
+    log.info(
+      `Signers: ${realResult.tx.transaction.message.accountKeys
+        .filter((a) => a.signer)
+        .map((a) => a.pubkey.toBase58())
+        .join(", ")}`,
+    );
     passed++;
   } else {
     log.warn(`Could not fetch genesis tx (may have been reset): ${realResult.code}`);
@@ -172,7 +179,7 @@ async function testRealTransaction() {
   try {
     log.info("Requesting airdrop...");
     const airdropSig = await connection.requestAirdrop(testPubkey, 2 * LAMPORTS_PER_SOL);
-    
+
     // Wait for confirmation
     const latestBlockhash = await connection.getLatestBlockhash();
     await connection.confirmTransaction({
@@ -180,7 +187,7 @@ async function testRealTransaction() {
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
     });
-    
+
     const balance = await connection.getBalance(testPubkey);
     log.success(`Airdrop received: ${balance / LAMPORTS_PER_SOL} SOL`);
   } catch (err) {
@@ -200,7 +207,7 @@ async function testRealTransaction() {
         fromPubkey: testPubkey,
         toPubkey: recipient,
         lamports: transferAmount,
-      })
+      }),
     );
 
     // Send and confirm
@@ -220,12 +227,17 @@ async function testRealTransaction() {
 
       // Verify wrong signer fails
       const wrongSignerError = verifyTransactionSigner(fetchResult.tx, recipient.toBase58());
-      assert(wrongSignerError !== null && wrongSignerError.code === "WRONG_SIGNER", "Wrong signer rejected");
+      assert(
+        wrongSignerError !== null && wrongSignerError.code === "WRONG_SIGNER",
+        "Wrong signer rejected",
+      );
 
       // Verify program (should fail - it's a system program transfer, not our program)
       const programError = verifyProgramInvoked(fetchResult.tx);
-      assert(programError !== null && programError.code === "WRONG_PROGRAM", "System transfer correctly fails program check");
-
+      assert(
+        programError !== null && programError.code === "WRONG_PROGRAM",
+        "System transfer correctly fails program check",
+      );
     } else {
       log.error(`Failed to fetch transaction: ${fetchResult.code}`);
       failed++;
@@ -257,11 +269,12 @@ async function testInvestmentVerification() {
 
   assert(
     !result.valid && result.error.code === "TX_NOT_FOUND",
-    "Non-existent transaction returns TX_NOT_FOUND"
+    "Non-existent transaction returns TX_NOT_FOUND",
   );
 
   // Test with real transaction but wrong program
-  const realSig = "2LLK3CKWxHaZnSgHvxAphDWMF9SVUUjcuFYjy1xXMmNsKMcvSJgga1UkEdvg17vJJQrjY6fNBuDWpfgwoA5WMiMD";
+  const realSig =
+    "2LLK3CKWxHaZnSgHvxAphDWMF9SVUUjcuFYjy1xXMmNsKMcvSJgga1UkEdvg17vJJQrjY6fNBuDWpfgwoA5WMiMD";
   const wrongProgramResult = await verifyInvestmentTransaction(realSig, {
     expectedSigner: "8woFkPq9XsxvW4CFUs71FVBHeeY5kG9Vp4JBHaaFj6Sq",
     assetId: "test-asset-id",
@@ -273,7 +286,7 @@ async function testInvestmentVerification() {
     const validErrors = ["TX_NOT_FOUND", "WRONG_PROGRAM", "WRONG_SIGNER"];
     assert(
       validErrors.includes(wrongProgramResult.error.code),
-      `System program tx correctly fails verification (${wrongProgramResult.error.code})`
+      `System program tx correctly fails verification (${wrongProgramResult.error.code})`,
     );
   } else {
     log.warn("Unexpected: genesis tx passed investment verification");
@@ -291,7 +304,7 @@ async function testIdempotency() {
   log.info("1. Before any DB update, we check if transactionSignature already exists");
   log.info("2. If found, return { sync_status: 'already_confirmed' } immediately");
   log.info("3. No duplicate DB entries possible for same signature");
-  
+
   log.success("Idempotency logic implemented in settlement-service.ts");
   passed++;
 }

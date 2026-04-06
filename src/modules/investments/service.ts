@@ -112,6 +112,20 @@ export class InvestmentsService {
   ): Promise<InvestmentPrepareResponse> {
     await this.assertInvestorCanInvest(currentUser);
     const quote = await this.getQuote(currentUser, input);
+    const investableAsset = await getInvestableAsset(input.asset_id);
+
+    if (
+      !investableAsset.asset.onchainAssetPubkey ||
+      !investableAsset.asset.shareMintPubkey ||
+      !investableAsset.asset.vaultPubkey
+    ) {
+      throw new ApiError(
+        409,
+        "ASSET_ONCHAIN_SETUP_REQUIRED",
+        "This asset is not initialized on-chain yet. Create the asset account, share mint, and vault before accepting wallet investments.",
+      );
+    }
+
     const [walletBinding] = await db
       .select()
       .from(walletBindings)
@@ -208,6 +222,9 @@ export class InvestmentsService {
       investorWalletAddress: walletBinding.walletAddress,
       amountUsdc: input.amount_usdc,
       sharesToReceive: quote.shares_to_receive,
+      assetPubkey: investableAsset.asset.onchainAssetPubkey,
+      vaultPubkey: investableAsset.asset.vaultPubkey,
+      shareMintPubkey: investableAsset.asset.shareMintPubkey,
     });
 
     return payload as InvestmentPrepareResponse;

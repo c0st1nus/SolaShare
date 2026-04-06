@@ -1,4 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
+import { Keypair } from "@solana/web3.js";
 import { eq } from "drizzle-orm";
 import { app } from "../app";
 import { env } from "../config/env";
@@ -9,6 +10,7 @@ import {
   authIdentities,
   type NewUser,
   passwordCredentials,
+  shareMints,
   users,
   verificationDecisions,
   verificationRequests,
@@ -19,6 +21,12 @@ import { adminService } from "../modules/admin/service";
 import { issuerService } from "../modules/issuer/service";
 
 export const resetTestState = async () => {
+  if (!env.SOLANA_USDC_MINT_ADDRESS) {
+    Object.assign(env, {
+      SOLANA_USDC_MINT_ADDRESS: Keypair.generate().publicKey.toBase58(),
+    });
+  }
+
   await client.unsafe(`
     TRUNCATE TABLE
       webhook_events,
@@ -161,7 +169,7 @@ export const createUser = async (overrides: Partial<NewUser> = {}) => {
 
 export const createActiveWalletBinding = async (
   userId: string,
-  walletAddress = `Wallet${crypto.randomUUID().replaceAll("-", "")}`,
+  walletAddress = Keypair.generate().publicKey.toBase58(),
 ) => {
   const [binding] = await db
     .insert(walletBindings)
@@ -342,6 +350,37 @@ export const createActiveSaleAsset = async (
   return {
     asset: resolvedAsset,
     saleTerms: resolvedSaleTerms,
+  };
+};
+
+export const initializeAssetOnchainFixture = async (assetId: string) => {
+  const onchainAssetPubkey = Keypair.generate().publicKey.toBase58();
+  const shareMintPubkey = Keypair.generate().publicKey.toBase58();
+  const vaultPubkey = Keypair.generate().publicKey.toBase58();
+
+  await db
+    .update(assets)
+    .set({
+      onchainAssetPubkey,
+      shareMintPubkey,
+      vaultPubkey,
+      updatedAt: new Date(),
+    })
+    .where(eq(assets.id, assetId));
+
+  await db.insert(shareMints).values({
+    assetId,
+    mintAddress: shareMintPubkey,
+    vaultAddress: vaultPubkey,
+    tokenProgram: "spl-token",
+    decimals: 6,
+    status: "minted",
+  });
+
+  return {
+    onchainAssetPubkey,
+    shareMintPubkey,
+    vaultPubkey,
   };
 };
 

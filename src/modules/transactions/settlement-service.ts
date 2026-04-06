@@ -18,10 +18,10 @@ import { ApiError } from "../../lib/api-error";
 import { logger } from "../../lib/logger";
 import {
   isValidSignature,
-  verifyInvestmentTransaction,
-  verifyClaimTransaction,
-  verifyRevenuePostTransaction,
   type VerificationResult,
+  verifyClaimTransaction,
+  verifyInvestmentTransaction,
+  verifyRevenuePostTransaction,
 } from "../../lib/solana";
 import { NotificationService } from "../notifications/service";
 import { toNumber, toShareAmountString } from "../shared/utils";
@@ -207,11 +207,7 @@ export class SettlementService {
       throw new Error("Called throwVerificationError with valid result");
     }
     const { error } = result;
-    throw new ApiError(
-      400,
-      `VERIFICATION_${error.code}`,
-      error.message,
-    );
+    throw new ApiError(400, `VERIFICATION_${error.code}`, error.message);
   }
 
   async confirmInvestment(actor: Actor | null, investmentId: string, transactionSignature: string) {
@@ -297,6 +293,7 @@ export class SettlementService {
       expectedSigner: walletBinding.walletAddress,
       assetId: currentInvestment.assetId,
       amountUsdc: toNumber(currentInvestment.amountUsdc),
+      sharesToReceive: toNumber(currentInvestment.sharesReceived),
     });
 
     if (!verificationResult.valid) {
@@ -424,12 +421,7 @@ export class SettlementService {
     const [walletBinding] = await db
       .select()
       .from(walletBindings)
-      .where(
-        and(
-          eq(walletBindings.userId, actor.id),
-          eq(walletBindings.status, "active"),
-        ),
-      )
+      .where(and(eq(walletBindings.userId, actor.id), eq(walletBindings.status, "active")))
       .limit(1);
 
     if (!walletBinding) {
@@ -532,7 +524,11 @@ export class SettlementService {
   }
 
   async confirmRevenuePosting(actor: Actor, revenueEpochId: string, transactionSignature: string) {
-    const log = logger.child({ method: "confirmRevenuePosting", revenueEpochId, transactionSignature });
+    const log = logger.child({
+      method: "confirmRevenuePosting",
+      revenueEpochId,
+      transactionSignature,
+    });
 
     // Validate signature format early
     if (!isValidSignature(transactionSignature)) {
@@ -590,12 +586,7 @@ export class SettlementService {
     const [walletBinding] = await db
       .select()
       .from(walletBindings)
-      .where(
-        and(
-          eq(walletBindings.userId, actor.id),
-          eq(walletBindings.status, "active"),
-        ),
-      )
+      .where(and(eq(walletBindings.userId, actor.id), eq(walletBindings.status, "active")))
       .limit(1);
 
     if (!walletBinding) {
@@ -659,7 +650,7 @@ export class SettlementService {
 
   /**
    * Confirm a wallet binding (legacy flow).
-   * 
+   *
    * NOTE: The preferred flow is to use /api/v1/auth/wallet/challenge + /api/v1/auth/wallet/verify
    * which performs proper Ed25519 signature verification with anti-replay protection.
    * This method exists for backwards compatibility with transaction-based confirmation.

@@ -19,6 +19,7 @@ import {
   walletChallengeResponseSchema,
   walletLinkBodySchema,
   walletLinkResponseSchema,
+  walletUnlinkResponseSchema,
   walletVerifyBodySchema,
   walletVerifyResponseSchema,
 } from "./contracts";
@@ -216,4 +217,13 @@ export const authRoutes = new Elysia({ prefix: "/auth", tags: ["Auth"] })
         200: walletVerifyResponseSchema,
       },
     },
-  );
+  )
+  .post("/wallet/unlink", ({ auth }) => authService.unlinkWallet(requireAuthenticatedUser(auth)), {
+    detail: {
+      summary: "Unlink the currently bound Solana wallet",
+      description: "Removes the active wallet binding from the authenticated user's account.",
+    },
+    response: {
+      200: walletUnlinkResponseSchema,
+    },
+  });

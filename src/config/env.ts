@@ -7,37 +7,38 @@ const optionalNonEmptyString = z.preprocess(
 
 const envSchema = z
   .object({
-  PORT: z.coerce.number().int().positive().default(3000),
-  DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
-  JWT_SECRET: z.string().min(1),
-  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
-  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
-  TELEGRAM_BOT_TOKEN: optionalNonEmptyString,
-  TELEGRAM_BOT_USERNAME: optionalNonEmptyString,
-  GOOGLE_CLIENT_ID: optionalNonEmptyString,
-  GOOGLE_CLIENT_SECRET: optionalNonEmptyString,
-  GOOGLE_OAUTH_REDIRECT_URI: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().url().optional(),
-  ),
-  SOLANA_RPC_URL: z.string().url(),
-  SOLANA_COMMITMENT: z.enum(["processed", "confirmed", "finalized"]),
-  SOLANA_PAYER_KEY: optionalNonEmptyString,
-  SOLANA_PROGRAM_ID: optionalNonEmptyString,
-  CHALLENGE_SECRET: z.string().min(32),
-  CHALLENGE_EXPIRY_SECONDS: z.coerce.number().int().positive().default(600),
-  STORAGE_PROVIDER: z.enum(["s3"]).default("s3"),
-  S3_ENDPOINT: z.string().url(),
-  S3_REGION: z.string().min(1).default("us-east-1"),
-  S3_BUCKET: z.string().min(1),
-  S3_ACCESS_KEY: z.string().min(1),
-  S3_SECRET_KEY: z.string().min(1),
-  HELIUS_API_KEY: z.string().optional(),
-  HELIUS_WEBHOOK_SECRET: optionalNonEmptyString,
-  CORS_ORIGINS: z.string().optional(),
-  ADMIN_TELEGRAM_IDS: z.string().optional(),
-  ISSUER_TELEGRAM_IDS: z.string().optional(),
+    PORT: z.coerce.number().int().positive().default(3000),
+    DATABASE_URL: z.string().min(1),
+    REDIS_URL: z.string().min(1),
+    JWT_SECRET: z.string().min(1),
+    ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+    REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+    TELEGRAM_BOT_TOKEN: optionalNonEmptyString,
+    TELEGRAM_BOT_USERNAME: optionalNonEmptyString,
+    GOOGLE_CLIENT_ID: optionalNonEmptyString,
+    GOOGLE_CLIENT_SECRET: optionalNonEmptyString,
+    GOOGLE_OAUTH_REDIRECT_URI: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().url().optional(),
+    ),
+    SOLANA_RPC_URL: z.string().url(),
+    SOLANA_COMMITMENT: z.enum(["processed", "confirmed", "finalized"]),
+    SOLANA_PAYER_KEY: optionalNonEmptyString,
+    SOLANA_PROGRAM_ID: optionalNonEmptyString,
+    SOLANA_USDC_MINT_ADDRESS: optionalNonEmptyString,
+    CHALLENGE_SECRET: z.string().min(32),
+    CHALLENGE_EXPIRY_SECONDS: z.coerce.number().int().positive().default(600),
+    STORAGE_PROVIDER: z.enum(["s3"]).default("s3"),
+    S3_ENDPOINT: z.string().url(),
+    S3_REGION: z.string().min(1).default("us-east-1"),
+    S3_BUCKET: z.string().min(1),
+    S3_ACCESS_KEY: z.string().min(1),
+    S3_SECRET_KEY: z.string().min(1),
+    HELIUS_API_KEY: z.string().optional(),
+    HELIUS_WEBHOOK_SECRET: optionalNonEmptyString,
+    CORS_ORIGINS: z.string().optional(),
+    ADMIN_TELEGRAM_IDS: z.string().optional(),
+    ISSUER_TELEGRAM_IDS: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     const googleConfigPresent = [
@@ -74,10 +75,7 @@ const envSchema = z
       });
     }
 
-    if (
-      value.GOOGLE_CLIENT_ID &&
-      !value.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com")
-    ) {
+    if (value.GOOGLE_CLIENT_ID && !value.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com")) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["GOOGLE_CLIENT_ID"],
@@ -86,10 +84,7 @@ const envSchema = z
       });
     }
 
-    if (
-      value.GOOGLE_OAUTH_REDIRECT_URI &&
-      value.GOOGLE_OAUTH_REDIRECT_URI.includes(".apps.googleusercontent.com")
-    ) {
+    if (value.GOOGLE_OAUTH_REDIRECT_URI?.includes(".apps.googleusercontent.com")) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["GOOGLE_OAUTH_REDIRECT_URI"],

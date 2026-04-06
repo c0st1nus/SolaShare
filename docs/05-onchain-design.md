@@ -44,6 +44,7 @@ Represents an on-chain anchor for the listed asset.
 - `status u8`
 - `share_mint Pubkey`
 - `vault Pubkey`
+- `payment_mint Pubkey`
 - `total_shares u64`
 - `shares_sold u64`
 - `created_at i64`
@@ -52,6 +53,9 @@ Represents an on-chain anchor for the listed asset.
 - anchor the asset in protocol state
 - connect sale, mint, and lifecycle status
 - provide immutable reference layer
+
+PDA note:
+- when deriving Solana PDAs from `asset_id`, use `sha256(asset_id)` as the 32-byte seed input rather than the raw UUID string
 
 ---
 
@@ -95,13 +99,14 @@ Tracks what a user has claimed.
 
 ## Treasury / Vault
 
-Vault holds funds for sale and/or distribution flow depending on design choice.
+For the implemented MVP flow, each asset has one SPL token vault account for the configured USDC mint.
 
-### Design options
-1. one vault per asset
-2. separate sale vault and distribution vault
-
-For MVP, one per asset may be simpler.
+Current model:
+- vault address is a PDA derived from `["vault", sha256(asset_id)]`
+- vault is a real SPL token account, not just a PDA placeholder
+- vault token authority is the asset PDA
+- investor payments go to this vault during `buy_shares`
+- the same vault can later fund revenue claims unless the protocol is split into separate sale and distribution vaults
 
 ---
 
@@ -127,8 +132,19 @@ Creates a new `AssetAccount`.
 ### Inputs
 - issuer
 - metadata URI
-- status
 - total share config
+- price per share
+
+### Effects in current implementation
+- creates the `AssetAccount` PDA
+- creates the `share_mint` PDA as an SPL mint
+- creates the asset USDC `vault` PDA as an SPL token account
+- stores the configured payment mint in `AssetAccount.payment_mint`
+
+Current numeric conventions:
+- share token decimals: `6`
+- `total_shares` and `shares_sold` are stored in atomic share units
+- `price_per_share` is stored in atomic USDC units per whole share
 
 ---
 
@@ -142,8 +158,48 @@ Processes investment into an asset offering.
 
 ### Effects
 - receives payment
-- transfers or mints share tokens
+- transfers USDC from the investor ATA into the asset vault
+- mints share tokens from the asset share mint into the investor share ATA
 - updates `shares_sold`
+
+Current accounts:
+- `investor`
+- `asset`
+- `vault`
+- `share_mint`
+- `investor_share_account`
+- `investor_usdc_account`
+- `payment_mint`
+- `token_program`
+
+Backend assembly notes:
+- backend always prepends idempotent creation of the investor share ATA
+- backend derives `investor_usdc_account` from configured `SOLANA_USDC_MINT_ADDRESS`
+- backend must not prepare investments unless `assets.onchain_asset_pubkey`, `assets.share_mint_pubkey`, and `assets.vault_pubkey` are already persisted
+
+## On-Chain Initialization Flow
+
+The repository now treats asset initialization as a distinct flow from investor purchase flow.
+
+Issuer setup flow:
+1. Asset is created and reviewed off-chain.
+2. Sale terms provide:
+   - `asset_id` from `assets.id`
+   - `metadata_uri` from `assets.asset_metadata_uri` or explicit setup input
+   - `total_shares` from `asset_sale_terms.total_shares`
+   - `price_per_share` from `asset_sale_terms.price_per_share_usdc`
+3. Issuer calls backend `prepare` for on-chain setup.
+4. Backend returns a transaction that runs `create_asset` and, when the DB asset is already `active_sale`, `activate_sale` in the same wallet-signed transaction.
+5. After the transaction is finalized, backend confirmation persists:
+   - `assets.onchain_asset_pubkey`
+   - `assets.share_mint_pubkey`
+   - `assets.vault_pubkey`
+   - `share_mints` row for the asset
+
+Dev/local note:
+- `SOLANA_PAYER_KEY` may partially sign prepared setup and investment transactions as fee payer
+- this is fee sponsorship and tooling only
+- investor and issuer signatures still come from the wallet for their respective user actions
 
 ---
 

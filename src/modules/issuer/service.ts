@@ -1,3 +1,4 @@
+import { PublicKey } from "@solana/web3.js";
 import { and, count, desc, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { db } from "../../db";
@@ -8,15 +9,30 @@ import {
   assets,
   auditLogs,
   revenueEpochs,
+  shareMints,
   users,
   verificationDecisions,
   verificationRequests,
   walletBindings,
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
-import { prepareRevenuePostTransaction } from "../../lib/solana";
+import {
+  deriveAssetPDA,
+  deriveShareMintPDA,
+  deriveVaultPDA,
+  getUsdcMintAddress,
+  prepareAssetSetupTransaction,
+  prepareRevenuePostTransaction,
+  connection as solanaConnection,
+  verifyAssetSetupTransaction,
+} from "../../lib/solana";
+import { resolveTokenProgramForMint, tokenProgramLabel } from "../../lib/solana/token-program";
 import { toMoneyString, toNumber } from "../shared/utils";
 import type {
+  assetOnchainConfirmResponseSchema,
+  assetOnchainSetupBodySchema,
+  assetOnchainSetupConfirmBodySchema,
+  assetOnchainSetupResponseSchema,
   issuerAssetBodySchema,
   issuerAssetDetailSchema,
   issuerAssetDocumentBodySchema,
@@ -49,6 +65,10 @@ type IssuerSubmitResponse = z.infer<typeof issuerSubmitResponseSchema>;
 type RevenueEpochBody = z.infer<typeof revenueEpochBodySchema>;
 type RevenueEpochResponse = z.infer<typeof revenueEpochResponseSchema>;
 type RevenuePostResponse = z.infer<typeof revenuePostResponseSchema>;
+type AssetOnchainSetupBody = z.infer<typeof assetOnchainSetupBodySchema>;
+type AssetOnchainSetupConfirmBody = z.infer<typeof assetOnchainSetupConfirmBodySchema>;
+type AssetOnchainSetupResponse = z.infer<typeof assetOnchainSetupResponseSchema>;
+type AssetOnchainConfirmResponse = z.infer<typeof assetOnchainConfirmResponseSchema>;
 
 type IssuerActor = {
   id: string;
@@ -131,6 +151,45 @@ const loadLatestReviewFeedback = async (
 };
 
 export class IssuerService {
+  async prepareWithdrawal(
+    issuer: { id: string },
+    assetId: string,
+    params: { amount_usdc: number },
+  ) {
+    const { prepareWithdrawTransaction } = await import("../../lib/solana/transactions");
+    const asset = await getOwnedAsset(assetId, issuer.id);
+
+    if (asset.status !== "active_sale" && asset.status !== "funded") {
+      throw new ApiError(400, "INVALID_STATUS", "Asset must be in active_sale or funded status");
+    }
+
+    const [userWithWallet] = await db
+      .select({
+        user: users,
+        walletBinding: walletBindings,
+      })
+      .from(users)
+      .leftJoin(
+        walletBindings,
+        and(eq(walletBindings.userId, users.id), eq(walletBindings.status, "active")),
+      )
+      .where(eq(users.id, issuer.id))
+      .limit(1);
+
+    const activeWallet = userWithWallet?.walletBinding;
+
+    if (!activeWallet) {
+      throw new ApiError(400, "WALLET_NOT_BOUND", "Issuer must have an active wallet binding");
+    }
+
+    return prepareWithdrawTransaction({
+      operationId: crypto.randomUUID(),
+      assetId,
+      issuerWalletAddress: activeWallet.walletAddress,
+      amountUsdc: params.amount_usdc,
+    });
+  }
+
   async createAssetDraft(
     currentUser: IssuerActor,
     input: IssuerAssetBody,
@@ -568,6 +627,231 @@ export class IssuerService {
       success: true,
       message: "Asset submission accepted for the next workflow step",
       next_status: nextStatus,
+    };
+  }
+
+  async prepareOnchainSetup(
+    currentUser: IssuerActor,
+    assetId: string,
+    input: AssetOnchainSetupBody,
+  ): Promise<AssetOnchainSetupResponse> {
+    const [row] = await db
+      .select({
+        asset: assets,
+        saleTerms: assetSaleTerms,
+      })
+      .from(assets)
+      .innerJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
+      .where(and(eq(assets.id, assetId), eq(assets.issuerUserId, currentUser.id)))
+      .limit(1);
+
+    if (!row) {
+      throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
+    }
+
+    if (
+      row.asset.status !== "verified" &&
+      row.asset.status !== "active_sale" &&
+      row.asset.status !== "funded"
+    ) {
+      throw new ApiError(
+        409,
+        "ASSET_NOT_READY_FOR_ONCHAIN_SETUP",
+        "Only verified, active sale, or funded assets can be initialized on-chain",
+      );
+    }
+
+    if (row.asset.onchainAssetPubkey && row.asset.shareMintPubkey && row.asset.vaultPubkey) {
+      throw new ApiError(
+        409,
+        "ASSET_ALREADY_INITIALIZED_ONCHAIN",
+        "Asset is already initialized on-chain",
+      );
+    }
+
+    const metadataUri = input.metadata_uri ?? row.asset.assetMetadataUri;
+    if (!metadataUri) {
+      throw new ApiError(
+        409,
+        "ASSET_METADATA_URI_REQUIRED",
+        "metadata_uri is required to initialize this asset on-chain",
+      );
+    }
+
+    const [walletBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(and(eq(walletBindings.userId, currentUser.id), eq(walletBindings.status, "active")))
+      .limit(1);
+
+    if (!walletBinding) {
+      throw new ApiError(
+        409,
+        "ACTIVE_WALLET_REQUIRED",
+        "An active wallet binding is required to initialize an asset on-chain",
+      );
+    }
+
+    if (row.asset.assetMetadataUri !== metadataUri) {
+      await db
+        .update(assets)
+        .set({
+          assetMetadataUri: metadataUri,
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, assetId));
+    }
+
+    const payload = await prepareAssetSetupTransaction({
+      operationId: assetId,
+      assetId,
+      issuerWalletAddress: walletBinding.walletAddress,
+      metadataUri,
+      totalShares: row.saleTerms.totalShares,
+      pricePerShareUsdc: toNumber(row.saleTerms.pricePerShareUsdc),
+      activateSale: row.asset.status === "active_sale" || row.asset.status === "funded",
+    });
+
+    return payload as AssetOnchainSetupResponse;
+  }
+
+  async confirmOnchainSetup(
+    currentUser: IssuerActor,
+    assetId: string,
+    input: AssetOnchainSetupConfirmBody,
+  ): Promise<AssetOnchainConfirmResponse> {
+    const [row] = await db
+      .select({
+        asset: assets,
+      })
+      .from(assets)
+      .where(and(eq(assets.id, assetId), eq(assets.issuerUserId, currentUser.id)))
+      .limit(1);
+
+    if (!row) {
+      throw new ApiError(404, "ASSET_NOT_FOUND", "Asset not found");
+    }
+
+    if (row.asset.onchainAssetPubkey && row.asset.shareMintPubkey && row.asset.vaultPubkey) {
+      return {
+        success: true,
+        asset_id: assetId,
+        onchain_asset_pubkey: row.asset.onchainAssetPubkey,
+        share_mint_pubkey: row.asset.shareMintPubkey,
+        vault_pubkey: row.asset.vaultPubkey,
+      };
+    }
+
+    const [walletBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(and(eq(walletBindings.userId, currentUser.id), eq(walletBindings.status, "active")))
+      .limit(1);
+
+    if (!walletBinding) {
+      throw new ApiError(
+        409,
+        "ACTIVE_WALLET_REQUIRED",
+        "An active wallet binding is required to confirm on-chain initialization",
+      );
+    }
+
+    const verificationResult = await verifyAssetSetupTransaction(input.transaction_signature, {
+      expectedSigner: walletBinding.walletAddress,
+      assetId,
+      activateSale: row.asset.status === "active_sale" || row.asset.status === "funded",
+    });
+
+    if (!verificationResult.valid) {
+      throw new ApiError(
+        400,
+        `VERIFICATION_${verificationResult.error.code}`,
+        verificationResult.error.message,
+      );
+    }
+
+    const nextOnchainAssetPubkey =
+      row.asset.onchainAssetPubkey ?? deriveAssetPDA({ assetId }).publicKey.toBase58();
+    const nextShareMintPubkey =
+      row.asset.shareMintPubkey ?? deriveShareMintPDA(assetId).publicKey.toBase58();
+    const nextVaultPubkey =
+      row.asset.vaultPubkey ?? deriveVaultPDA({ assetId }).publicKey.toBase58();
+    const paymentMint = getUsdcMintAddress();
+    const tokenProgram =
+      paymentMint !== null
+        ? tokenProgramLabel(
+            await resolveTokenProgramForMint(
+              new PublicKey(paymentMint),
+              "Payment",
+              solanaConnection,
+            ),
+          )
+        : "spl-token";
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(assets)
+        .set({
+          onchainAssetPubkey: nextOnchainAssetPubkey,
+          shareMintPubkey: nextShareMintPubkey,
+          vaultPubkey: nextVaultPubkey,
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, assetId));
+
+      const [existingShareMint] = await tx
+        .select()
+        .from(shareMints)
+        .where(eq(shareMints.assetId, assetId))
+        .limit(1);
+
+      if (existingShareMint) {
+        await tx
+          .update(shareMints)
+          .set({
+            mintAddress: nextShareMintPubkey,
+            vaultAddress: nextVaultPubkey,
+            tokenProgram,
+            decimals: 6,
+            transactionSignature: input.transaction_signature,
+            status: "minted",
+            updatedAt: new Date(),
+          })
+          .where(eq(shareMints.assetId, assetId));
+      } else {
+        await tx.insert(shareMints).values({
+          assetId,
+          mintAddress: nextShareMintPubkey,
+          vaultAddress: nextVaultPubkey,
+          tokenProgram,
+          decimals: 6,
+          transactionSignature: input.transaction_signature,
+          status: "minted",
+        });
+      }
+
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "asset",
+        entityId: assetId,
+        action: "asset.onchain_initialized",
+        payloadJson: {
+          transaction_signature: input.transaction_signature,
+          onchain_asset_pubkey: nextOnchainAssetPubkey,
+          share_mint_pubkey: nextShareMintPubkey,
+          vault_pubkey: nextVaultPubkey,
+          verification_slot: verificationResult.slot,
+          verification_block_time: verificationResult.blockTime,
+        },
+      });
+    });
+
+    return {
+      success: true,
+      asset_id: assetId,
+      onchain_asset_pubkey: nextOnchainAssetPubkey,
+      share_mint_pubkey: nextShareMintPubkey,
+      vault_pubkey: nextVaultPubkey,
     };
   }
 

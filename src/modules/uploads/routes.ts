@@ -19,11 +19,7 @@ export const uploadsRoutes = new Elysia({
   .post(
     "/presign",
     ({ auth, body, request }) =>
-      uploadsService.presign(
-        getRequestOrigin(request),
-        requireAuthenticatedUser(auth).id,
-        body,
-      ),
+      uploadsService.presign(getRequestOrigin(request), requireAuthenticatedUser(auth).id, body),
     {
       body: presignUploadBodySchema,
       detail: {
@@ -36,8 +32,7 @@ export const uploadsRoutes = new Elysia({
   )
   .put(
     "/direct",
-    ({ query, request }) =>
-      uploadsService.upload(query.token, getRequestOrigin(request), request),
+    ({ query, request }) => uploadsService.upload(query.token, getRequestOrigin(request), request),
     {
       query: directUploadQuerySchema,
       detail: {

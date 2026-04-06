@@ -1,11 +1,7 @@
 import { z } from "zod";
 import { authProviderSchema } from "../auth/contracts";
 import { isoDateTimeSchema, uuidSchema } from "../shared/contracts";
-import {
-  kycStatusSchema,
-  userRoleSchema,
-  verificationRequestStatusSchema,
-} from "../shared/domain";
+import { kycStatusSchema, userRoleSchema, verificationRequestStatusSchema } from "../shared/domain";
 
 export const meProfileSchema = z.object({
   id: uuidSchema,

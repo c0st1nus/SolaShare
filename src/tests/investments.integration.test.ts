@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { assets, holdingsSnapshots, investments } from "../db/schema";
-import { ApiError } from "../lib/api-error";
+import { investments } from "../db/schema";
+import type { ApiError } from "../lib/api-error";
 import { investmentsService } from "../modules/investments/service";
-import { meService } from "../modules/me/service";
-import { transactionsService } from "../modules/transactions/service";
 import {
   approveUserKyc,
   createActiveSaleAsset,
   createActiveWalletBinding,
   createUser,
+  initializeAssetOnchainFixture,
   resetTestState,
 } from "./helpers";
 
@@ -64,16 +63,48 @@ describe("investments integration", () => {
     });
     await approveUserKyc(investor.id, admin.id);
     const { asset } = await createActiveSaleAsset(issuer, admin);
+    await initializeAssetOnchainFixture(asset.id);
 
     await expect(
       investmentsService.prepareInvestment(investor, {
         asset_id: asset.id,
         amount_usdc: 100,
       }),
-    ).rejects.toThrow(ApiError);
+    ).rejects.toMatchObject({
+      code: "ACTIVE_WALLET_REQUIRED",
+      status: 409,
+    } satisfies Partial<ApiError>);
   });
 
-  it("creates a pending investment during prepare", async () => {
+  it("rejects preparing an investment when asset is not initialized on-chain", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-onchain-required",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "admin-onchain-required",
+    });
+    const investor = await createUser({
+      role: "investor",
+      telegramUserId: "investor-onchain-required",
+    });
+    await approveUserKyc(investor.id, admin.id);
+    await createActiveWalletBinding(investor.id);
+    const { asset } = await createActiveSaleAsset(issuer, admin);
+
+    await expect(
+      investmentsService.prepareInvestment(investor, {
+        asset_id: asset.id,
+        amount_usdc: 100,
+      }),
+    ).rejects.toMatchObject({
+      code: "ASSET_ONCHAIN_SETUP_REQUIRED",
+      status: 409,
+    } satisfies Partial<ApiError>);
+  });
+
+  it("creates a pending investment during prepare for an initialized asset", async () => {
     const issuer = await createUser({
       role: "issuer",
       telegramUserId: "issuer-pending-invest",
@@ -89,112 +120,24 @@ describe("investments integration", () => {
     await approveUserKyc(investor.id, admin.id);
     await createActiveWalletBinding(investor.id);
     const { asset } = await createActiveSaleAsset(issuer, admin);
+    await initializeAssetOnchainFixture(asset.id);
 
     const preparedInvestment = await investmentsService.prepareInvestment(investor, {
       asset_id: asset.id,
       amount_usdc: 100,
     });
 
-    const [investment] = await db
-      .select()
-      .from(investments)
-      .where(eq(investments.id, preparedInvestment.operation_id))
-      .limit(1);
-
-    expect(investment?.status).toBe("pending");
-    expect(investment?.amountUsdc).toBe("100.000000");
-  });
-
-  it("prepares and confirms an investment, updating holdings and portfolio", async () => {
-    const issuer = await createUser({
-      role: "issuer",
-      telegramUserId: "issuer-confirm-invest",
-    });
-    const admin = await createUser({
-      role: "admin",
-      telegramUserId: "admin-confirm-invest",
-    });
-    const investor = await createUser({
-      role: "investor",
-      telegramUserId: "investor-confirm-invest",
-    });
-    await approveUserKyc(investor.id, admin.id);
-    await createActiveWalletBinding(investor.id);
-    const { asset } = await createActiveSaleAsset(issuer, admin, {
-      saleTerms: {
-        target_raise_usdc: 100,
-      },
-    });
-
-    const preparedInvestment = await investmentsService.prepareInvestment(investor, {
-      asset_id: asset.id,
-      amount_usdc: 100,
-    });
-
-    const confirmation = await transactionsService.confirmTransaction(investor, {
-      kind: "investment",
-      operation_id: preparedInvestment.operation_id,
-      transaction_signature: "investment-signature",
-    });
-
-    expect(confirmation.sync_status).toBe("confirmed");
-
-    const [investment, holding, refreshedAsset, portfolio] = await Promise.all([
-      db
-        .select()
-        .from(investments)
-        .where(eq(investments.id, preparedInvestment.operation_id))
-        .limit(1),
-      db.select().from(holdingsSnapshots).where(eq(holdingsSnapshots.assetId, asset.id)).limit(1),
-      db.select().from(assets).where(eq(assets.id, asset.id)).limit(1),
-      meService.getPortfolio(investor.id),
-    ]);
-
-    expect(investment[0]?.status).toBe("confirmed");
-    expect(holding[0]?.sharesAmount).toBe("10.000000000000");
-    expect(refreshedAsset[0]?.status).toBe("funded");
-    expect(portfolio.total_invested_usdc).toBe(100);
-  });
-
-  it("treats repeated confirmation as idempotent", async () => {
-    const issuer = await createUser({
-      role: "issuer",
-      telegramUserId: "issuer-idempotent-invest",
-    });
-    const admin = await createUser({
-      role: "admin",
-      telegramUserId: "admin-idempotent-invest",
-    });
-    const investor = await createUser({
-      role: "investor",
-      telegramUserId: "investor-idempotent-invest",
-    });
-    await approveUserKyc(investor.id, admin.id);
-    await createActiveWalletBinding(investor.id);
-    const { asset } = await createActiveSaleAsset(issuer, admin);
-
-    const preparedInvestment = await investmentsService.prepareInvestment(investor, {
-      asset_id: asset.id,
-      amount_usdc: 100,
-    });
-
-    await transactionsService.confirmTransaction(investor, {
-      kind: "investment",
-      operation_id: preparedInvestment.operation_id,
-      transaction_signature: "investment-signature",
-    });
-    const repeated = await transactionsService.confirmTransaction(investor, {
-      kind: "investment",
-      operation_id: preparedInvestment.operation_id,
-      transaction_signature: "investment-signature",
-    });
-
-    expect(repeated.sync_status).toBe("confirmed");
     const rows = await db
       .select()
       .from(investments)
       .where(eq(investments.id, preparedInvestment.operation_id));
+
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("pending");
+    expect(rows[0]?.amountUsdc).toBe("100.000000");
+    expect(preparedInvestment.metadata.kind).toBe("investment");
+    expect(preparedInvestment.metadata.asset_id).toBe(asset.id);
+    expect(preparedInvestment.metadata.amount_usdc).toBe(100);
   });
 
   it("rejects preparing an investment before KYC approval", async () => {

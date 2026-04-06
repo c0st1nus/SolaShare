@@ -1,11 +1,6 @@
 import { count, eq } from "drizzle-orm";
 import { db } from "../../db";
-import {
-  auditLogs,
-  authIdentities,
-  passwordCredentials,
-  users,
-} from "../../db/schema";
+import { auditLogs, authIdentities, passwordCredentials, users } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
@@ -51,11 +46,7 @@ export const bootstrapPasswordAdmin = async (
     .limit(1);
 
   if (existingIdentity) {
-    throw new ApiError(
-      409,
-      "EMAIL_ALREADY_REGISTERED",
-      "Email address is already registered",
-    );
+    throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "Email address is already registered");
   }
 
   const user = await db.transaction(async (tx) => {

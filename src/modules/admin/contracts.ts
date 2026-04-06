@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { issuerAssetDetailSchema } from "../issuer/contracts";
 import { kycDocumentTypeSchema } from "../me/contracts";
 import {
   idParamSchema,
@@ -15,7 +16,6 @@ import {
   verificationDecisionOutcomeSchema,
   verificationRequestStatusSchema,
 } from "../shared/domain";
-import { issuerAssetDetailSchema } from "../issuer/contracts";
 
 export const adminAssetActionParamsSchema = idParamSchema;
 
