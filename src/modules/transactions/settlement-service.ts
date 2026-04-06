@@ -16,6 +16,13 @@ import {
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
 import { logger } from "../../lib/logger";
+import {
+  isValidSignature,
+  verifyInvestmentTransaction,
+  verifyClaimTransaction,
+  verifyRevenuePostTransaction,
+  type VerificationResult,
+} from "../../lib/solana";
 import { NotificationService } from "../notifications/service";
 import { toNumber, toShareAmountString } from "../shared/utils";
 
@@ -192,7 +199,45 @@ const maybeMarkAssetFunded = async (
 };
 
 export class SettlementService {
+  /**
+   * Helper to throw verification error as ApiError
+   */
+  private throwVerificationError(result: VerificationResult): never {
+    if (result.valid) {
+      throw new Error("Called throwVerificationError with valid result");
+    }
+    const { error } = result;
+    throw new ApiError(
+      400,
+      `VERIFICATION_${error.code}`,
+      error.message,
+    );
+  }
+
   async confirmInvestment(actor: Actor | null, investmentId: string, transactionSignature: string) {
+    const log = logger.child({ method: "confirmInvestment", investmentId, transactionSignature });
+
+    // Validate signature format early
+    if (!isValidSignature(transactionSignature)) {
+      throw new ApiError(400, "INVALID_SIGNATURE", "Transaction signature format is invalid");
+    }
+
+    // Idempotency check: has this signature already been used?
+    const [existingBySignature] = await db
+      .select({ id: investments.id })
+      .from(investments)
+      .where(eq(investments.transactionSignature, transactionSignature))
+      .limit(1);
+
+    if (existingBySignature) {
+      log.info({ existingId: existingBySignature.id }, "Transaction signature already used");
+      return {
+        success: true as const,
+        sync_status: "already_confirmed" as const,
+      };
+    }
+
+    // Fetch the investment
     const [currentInvestment] = await db
       .select()
       .from(investments)
@@ -230,6 +275,41 @@ export class SettlementService {
       );
     }
 
+    // Get user's wallet binding for verification
+    const [walletBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(
+        and(
+          eq(walletBindings.userId, currentInvestment.userId),
+          eq(walletBindings.status, "active"),
+        ),
+      )
+      .limit(1);
+
+    if (!walletBinding) {
+      throw new ApiError(400, "NO_WALLET_BINDING", "User has no active wallet binding");
+    }
+
+    // ON-CHAIN VERIFICATION
+    log.info("Starting on-chain verification");
+    const verificationResult = await verifyInvestmentTransaction(transactionSignature, {
+      expectedSigner: walletBinding.walletAddress,
+      assetId: currentInvestment.assetId,
+      amountUsdc: toNumber(currentInvestment.amountUsdc),
+    });
+
+    if (!verificationResult.valid) {
+      log.warn({ error: verificationResult.error }, "On-chain verification failed");
+      this.throwVerificationError(verificationResult);
+    }
+
+    log.info(
+      { slot: verificationResult.slot, blockTime: verificationResult.blockTime },
+      "On-chain verification passed",
+    );
+
+    // Fetch sale terms for shares calculation
     const [currentSaleTerms] = await db
       .select()
       .from(assetSaleTerms)
@@ -240,6 +320,7 @@ export class SettlementService {
       throw new ApiError(409, "SALE_TERMS_NOT_FOUND", "Asset sale terms are missing");
     }
 
+    // Update database only after verification passes
     await db.transaction(async (tx) => {
       await tx
         .update(investments)
@@ -265,6 +346,8 @@ export class SettlementService {
         {
           asset_id: currentInvestment.assetId,
           transaction_signature: transactionSignature,
+          verification_slot: verificationResult.slot,
+          verification_block_time: verificationResult.blockTime,
         },
       );
 
@@ -294,6 +377,28 @@ export class SettlementService {
   }
 
   async confirmClaim(actor: Actor, claimId: string, transactionSignature: string) {
+    const log = logger.child({ method: "confirmClaim", claimId, transactionSignature });
+
+    // Validate signature format early
+    if (!isValidSignature(transactionSignature)) {
+      throw new ApiError(400, "INVALID_SIGNATURE", "Transaction signature format is invalid");
+    }
+
+    // Idempotency check: has this signature already been used?
+    const [existingBySignature] = await db
+      .select({ id: claims.id })
+      .from(claims)
+      .where(eq(claims.transactionSignature, transactionSignature))
+      .limit(1);
+
+    if (existingBySignature) {
+      log.info({ existingId: existingBySignature.id }, "Transaction signature already used");
+      return {
+        success: true as const,
+        sync_status: "already_confirmed" as const,
+      };
+    }
+
     const [claimRecord] = await db.select().from(claims).where(eq(claims.id, claimId)).limit(1);
 
     if (!claimRecord) {
@@ -315,6 +420,53 @@ export class SettlementService {
       throw new ApiError(409, "INVALID_CLAIM_STATE", "Only pending claims can be confirmed");
     }
 
+    // Get user's wallet binding for verification
+    const [walletBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(
+        and(
+          eq(walletBindings.userId, actor.id),
+          eq(walletBindings.status, "active"),
+        ),
+      )
+      .limit(1);
+
+    if (!walletBinding) {
+      throw new ApiError(400, "NO_WALLET_BINDING", "User has no active wallet binding");
+    }
+
+    // Get revenue epoch for epoch number
+    const [revenueEpoch] = await db
+      .select()
+      .from(revenueEpochs)
+      .where(eq(revenueEpochs.id, claimRecord.revenueEpochId))
+      .limit(1);
+
+    if (!revenueEpoch) {
+      throw new ApiError(404, "REVENUE_EPOCH_NOT_FOUND", "Revenue epoch not found");
+    }
+
+    // ON-CHAIN VERIFICATION
+    log.info("Starting on-chain verification");
+    const verificationResult = await verifyClaimTransaction(transactionSignature, {
+      expectedSigner: walletBinding.walletAddress,
+      assetId: claimRecord.assetId,
+      epochNumber: revenueEpoch.epochNumber,
+      claimAmountUsdc: toNumber(claimRecord.claimAmountUsdc),
+    });
+
+    if (!verificationResult.valid) {
+      log.warn({ error: verificationResult.error }, "On-chain verification failed");
+      this.throwVerificationError(verificationResult);
+    }
+
+    log.info(
+      { slot: verificationResult.slot, blockTime: verificationResult.blockTime },
+      "On-chain verification passed",
+    );
+
+    // Update database only after verification passes
     await db.transaction(async (tx) => {
       await tx
         .update(claims)
@@ -324,31 +476,19 @@ export class SettlementService {
         })
         .where(and(eq(claims.id, claimId), eq(claims.status, "pending")));
 
-      const [aggregateClaimed, revenueEpochRows] = await Promise.all([
-        tx
-          .select({
-            total: sql<string>`coalesce(sum(${claims.claimAmountUsdc}), 0)`,
-          })
-          .from(claims)
-          .where(
-            and(
-              eq(claims.revenueEpochId, claimRecord.revenueEpochId),
-              eq(claims.status, "confirmed"),
-            ),
+      const [aggregateClaimed] = await tx
+        .select({
+          total: sql<string>`coalesce(sum(${claims.claimAmountUsdc}), 0)`,
+        })
+        .from(claims)
+        .where(
+          and(
+            eq(claims.revenueEpochId, claimRecord.revenueEpochId),
+            eq(claims.status, "confirmed"),
           ),
-        tx
-          .select()
-          .from(revenueEpochs)
-          .where(eq(revenueEpochs.id, claimRecord.revenueEpochId))
-          .limit(1),
-      ]);
-      const revenueEpoch = revenueEpochRows[0];
+        );
 
-      if (!revenueEpoch) {
-        throw new ApiError(404, "REVENUE_EPOCH_NOT_FOUND", "Revenue epoch not found");
-      }
-
-      const totalClaimed = toNumber(aggregateClaimed[0]?.total);
+      const totalClaimed = toNumber(aggregateClaimed?.total);
       const distributableRevenue = toNumber(revenueEpoch.distributableRevenueUsdc);
 
       if (
@@ -368,6 +508,8 @@ export class SettlementService {
         asset_id: claimRecord.assetId,
         revenue_epoch_id: claimRecord.revenueEpochId,
         transaction_signature: transactionSignature,
+        verification_slot: verificationResult.slot,
+        verification_block_time: verificationResult.blockTime,
       });
 
       await notificationsService.create(tx, claimRecord.userId, {
@@ -390,6 +532,28 @@ export class SettlementService {
   }
 
   async confirmRevenuePosting(actor: Actor, revenueEpochId: string, transactionSignature: string) {
+    const log = logger.child({ method: "confirmRevenuePosting", revenueEpochId, transactionSignature });
+
+    // Validate signature format early
+    if (!isValidSignature(transactionSignature)) {
+      throw new ApiError(400, "INVALID_SIGNATURE", "Transaction signature format is invalid");
+    }
+
+    // Idempotency check: has this signature already been used?
+    const [existingBySignature] = await db
+      .select({ id: revenueEpochs.id })
+      .from(revenueEpochs)
+      .where(eq(revenueEpochs.transactionSignature, transactionSignature))
+      .limit(1);
+
+    if (existingBySignature) {
+      log.info({ existingId: existingBySignature.id }, "Transaction signature already used");
+      return {
+        success: true as const,
+        sync_status: "already_confirmed" as const,
+      };
+    }
+
     const [revenueEpoch] = await db
       .select()
       .from(revenueEpochs)
@@ -422,6 +586,42 @@ export class SettlementService {
       );
     }
 
+    // Get issuer's wallet binding for verification
+    const [walletBinding] = await db
+      .select()
+      .from(walletBindings)
+      .where(
+        and(
+          eq(walletBindings.userId, actor.id),
+          eq(walletBindings.status, "active"),
+        ),
+      )
+      .limit(1);
+
+    if (!walletBinding) {
+      throw new ApiError(400, "NO_WALLET_BINDING", "User has no active wallet binding");
+    }
+
+    // ON-CHAIN VERIFICATION
+    log.info("Starting on-chain verification");
+    const verificationResult = await verifyRevenuePostTransaction(transactionSignature, {
+      expectedSigner: walletBinding.walletAddress,
+      assetId: revenueEpoch.assetId,
+      epochNumber: revenueEpoch.epochNumber,
+      amountUsdc: toNumber(revenueEpoch.grossRevenueUsdc),
+    });
+
+    if (!verificationResult.valid) {
+      log.warn({ error: verificationResult.error }, "On-chain verification failed");
+      this.throwVerificationError(verificationResult);
+    }
+
+    log.info(
+      { slot: verificationResult.slot, blockTime: verificationResult.blockTime },
+      "On-chain verification passed",
+    );
+
+    // Update database only after verification passes
     await db.transaction(async (tx) => {
       await tx
         .update(revenueEpochs)
@@ -435,6 +635,8 @@ export class SettlementService {
       await createAuditLog(tx, actor.id, "revenue_epoch", revenueEpochId, "revenue_epoch.posted", {
         asset_id: revenueEpoch.assetId,
         transaction_signature: transactionSignature,
+        verification_slot: verificationResult.slot,
+        verification_block_time: verificationResult.blockTime,
       });
 
       await notificationsService.createForAssetUsers(tx, revenueEpoch.assetId, {

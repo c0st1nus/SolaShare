@@ -61,3 +61,39 @@ export {
   prepareRevenuePostTransaction,
   prepareClaimTransaction,
 } from "./transactions";
+
+// Verification
+export type {
+  VerificationErrorCode,
+  VerificationError,
+  VerificationSuccess,
+  VerificationResult,
+  InvestmentVerificationParams,
+  ClaimVerificationParams,
+  RevenuePostVerificationParams,
+} from "./verification";
+
+export {
+  isValidSignature,
+  fetchAndVerifyTransaction,
+  fetchAndVerifyTransactionWithRetry,
+  verifyTransactionSigner,
+  verifyProgramInvoked,
+  verifyAccountsMatch,
+  verifyInvestmentTransaction,
+  verifyClaimTransaction,
+  verifyRevenuePostTransaction,
+} from "./verification";
+
+// Indexer
+export {
+  startPollingIndexer,
+  stopPollingIndexer,
+  getIndexerStatus,
+  handleWebhookTransaction,
+  syncTransaction,
+  type IndexerConfig,
+  type IndexerStatus,
+  type IndexedTransaction,
+  type WebhookTransactionPayload,
+} from "./indexer";

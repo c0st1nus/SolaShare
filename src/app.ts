@@ -7,6 +7,7 @@ import { adminRoutes } from "./modules/admin/routes";
 import { assetsRoutes } from "./modules/assets/routes";
 import { authRoutes } from "./modules/auth/routes";
 import { claimsRoutes } from "./modules/claims/routes";
+import { indexerRoutes } from "./modules/indexer/routes";
 import { investmentsRoutes } from "./modules/investments/routes";
 import { issuerRoutes } from "./modules/issuer/routes";
 import { meRoutes } from "./modules/me/routes";
@@ -29,6 +30,7 @@ const api = new Elysia({ prefix: "/api/v1" })
   .use(uploadsRoutes)
   .use(notificationsRoutes)
   .use(webhookRoutes)
+  .use(indexerRoutes)
   .use(adminRoutes);
 
 const defaultAllowedOrigins = new Set([

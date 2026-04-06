@@ -41,3 +41,12 @@ yarn-error.log*
 **/*.log
 package-lock.json
 **/*.bun
+
+#linux cache
+# IDE & System Cache
+Cache/
+CachedData/
+CachedConfigurations/
+.vscode/
+*.log
+node_modules/

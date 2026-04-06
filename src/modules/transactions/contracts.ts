@@ -9,5 +9,5 @@ export const transactionConfirmBodySchema = z.object({
 
 export const transactionConfirmResponseSchema = z.object({
   success: z.literal(true),
-  sync_status: z.enum(["queued", "confirmed"]),
+  sync_status: z.enum(["queued", "confirmed", "already_confirmed"]),
 });

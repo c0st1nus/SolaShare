@@ -1,0 +1,1 @@
+export { indexerRoutes } from "./routes";
