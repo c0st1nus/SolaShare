@@ -7,8 +7,9 @@ STATE_DIR="${ROOT_DIR}/.solana"
 LEDGER_DIR="${STATE_DIR}/test-ledger"
 PID_FILE="${STATE_DIR}/validator.pid"
 LOG_FILE="${STATE_DIR}/validator.log"
-PROGRAM_SO="${ROOT_DIR}/solashare_program/target/deploy/solashare_program.so"
-PROGRAM_KEYPAIR="${ROOT_DIR}/solashare_program/target/deploy/solashare_program-keypair.json"
+PROGRAM_WORKSPACE_DIR="${ROOT_DIR}/programs/solashare-protocol"
+PROGRAM_SO="${PROGRAM_WORKSPACE_DIR}/target/deploy/solashare_protocol.so"
+PROGRAM_KEYPAIR="${PROGRAM_WORKSPACE_DIR}/target/deploy/solashare_protocol-keypair.json"
 RPC_PORT="${RPC_PORT:-8899}"
 FAUCET_PORT="${FAUCET_PORT:-9900}"
 HOST="${HOST:-127.0.0.1}"
@@ -67,17 +68,17 @@ build_program() {
   if command -v anchor >/dev/null 2>&1; then
     echo "Building Solana program with anchor build"
     (
-      cd "${ROOT_DIR}/solashare_program"
+      cd "${PROGRAM_WORKSPACE_DIR}"
       anchor build
     )
     return
   fi
 
   if command -v cargo-build-sbf >/dev/null 2>&1; then
-    echo "Building Solana program with cargo-build-sbf"
+      echo "Building Solana program with cargo-build-sbf"
     cargo-build-sbf \
-      --manifest-path "${ROOT_DIR}/solashare_program/programs/solashare_program/Cargo.toml" \
-      --sbf-out-dir "${ROOT_DIR}/solashare_program/target/deploy"
+      --manifest-path "${PROGRAM_WORKSPACE_DIR}/programs/solashare_protocol/Cargo.toml" \
+      --sbf-out-dir "${PROGRAM_WORKSPACE_DIR}/target/deploy"
     return
   fi
 

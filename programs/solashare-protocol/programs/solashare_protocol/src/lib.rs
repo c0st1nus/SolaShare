@@ -11,7 +11,7 @@ const SHARE_SCALE: u64 = 1_000_000;
 const SHARE_TOKEN_DECIMALS: u8 = 6;
 
 #[program]
-pub mod solashare_program {
+pub mod solashare_protocol {
     use super::*;
 
     pub fn create_asset(

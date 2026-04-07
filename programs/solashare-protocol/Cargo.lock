@@ -2366,7 +2366,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "solashare_program"
+name = "solashare_protocol"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",

@@ -1,6 +1,11 @@
 {
+  "name": "solashare-protocol-workspace",
+  "private": true,
   "license": "ISC",
   "scripts": {
+    "build": "anchor build",
+    "test": "anchor test",
+    "test:ts": "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\"",
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },

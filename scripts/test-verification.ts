@@ -21,14 +21,14 @@ import {
   sendAndConfirmTransaction,
   Transaction,
 } from "@solana/web3.js";
-import { connection, programId } from "../src/lib/solana/config";
+import { connection, programId } from "../apps/api/src/lib/solana/config";
 import {
   fetchAndVerifyTransaction,
   isValidSignature,
   verifyInvestmentTransaction,
   verifyProgramInvoked,
   verifyTransactionSigner,
-} from "../src/lib/solana/verification";
+} from "../apps/api/src/lib/solana/verification";
 
 // ANSI colors for output
 const GREEN = "\x1b[32m";

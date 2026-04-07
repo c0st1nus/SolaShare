@@ -1,5 +1,5 @@
 {
-  "name": "solashare-frontend",
+  "name": "solashare-web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint"
+    "check": "bun run typecheck && bun run lint"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.27",

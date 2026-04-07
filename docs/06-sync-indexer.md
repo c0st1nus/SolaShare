@@ -9,10 +9,10 @@ models and operational state from on-chain transactions.
 
 In the current repository, the runtime implementation is centered around:
 
-- [src/lib/solana/indexer.ts](/home/const/solashare/src/lib/solana/indexer.ts)
-- [src/modules/indexer/routes.ts](/home/const/solashare/src/modules/indexer/routes.ts)
-- [src/modules/webhook/routes.ts](/home/const/solashare/src/modules/webhook/routes.ts)
-- [src/modules/webhook/service.ts](/home/const/solashare/src/modules/webhook/service.ts)
+- [apps/api/src/lib/solana/indexer.ts](/home/const/solashare/apps/api/src/lib/solana/indexer.ts)
+- [apps/api/src/modules/indexer/routes.ts](/home/const/solashare/apps/api/src/modules/indexer/routes.ts)
+- [apps/api/src/modules/webhook/routes.ts](/home/const/solashare/apps/api/src/modules/webhook/routes.ts)
+- [apps/api/src/modules/webhook/service.ts](/home/const/solashare/apps/api/src/modules/webhook/service.ts)
 
 This document describes both:
 
@@ -167,7 +167,7 @@ Current goals:
 ## Polling Mode
 
 Polling is implemented in
-[src/lib/solana/indexer.ts](/home/const/solashare/src/lib/solana/indexer.ts).
+[apps/api/src/lib/solana/indexer.ts](/home/const/solashare/apps/api/src/lib/solana/indexer.ts).
 
 Current behavior:
 

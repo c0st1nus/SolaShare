@@ -1,6 +1,6 @@
-import { closeDatabaseConnection } from "../src/db";
-import { ApiError } from "../src/lib/api-error";
-import { bootstrapPasswordAdmin } from "../src/modules/auth/bootstrap";
+import { closeDatabaseConnection } from "../apps/api/src/db";
+import { ApiError } from "../apps/api/src/lib/api-error";
+import { bootstrapPasswordAdmin } from "../apps/api/src/modules/auth/bootstrap";
 
 const parseArguments = (argv: string[]) => {
   const args = new Map<string, string>();

@@ -6,13 +6,13 @@ when developing SolaShare.
 ## Backend Route Modules
 
 The backend mounts the following route groups in
-[src/app.ts](/home/const/solashare/src/app.ts).
+[apps/api/src/app.ts](/home/const/solashare/apps/api/src/app.ts).
 
 ### `system`
 
 Files:
 
-- [src/modules/system/routes.ts](/home/const/solashare/src/modules/system/routes.ts)
+- [apps/api/src/modules/system/routes.ts](/home/const/solashare/apps/api/src/modules/system/routes.ts)
 
 Responsibilities:
 
@@ -29,11 +29,11 @@ Main endpoints:
 
 Files:
 
-- [src/modules/auth/routes.ts](/home/const/solashare/src/modules/auth/routes.ts)
-- [src/modules/auth/service.ts](/home/const/solashare/src/modules/auth/service.ts)
-- [src/modules/auth/contracts.ts](/home/const/solashare/src/modules/auth/contracts.ts)
-- [src/modules/auth/bootstrap.ts](/home/const/solashare/src/modules/auth/bootstrap.ts)
-- [src/modules/auth/utils.ts](/home/const/solashare/src/modules/auth/utils.ts)
+- [apps/api/src/modules/auth/routes.ts](/home/const/solashare/apps/api/src/modules/auth/routes.ts)
+- [apps/api/src/modules/auth/service.ts](/home/const/solashare/apps/api/src/modules/auth/service.ts)
+- [apps/api/src/modules/auth/contracts.ts](/home/const/solashare/apps/api/src/modules/auth/contracts.ts)
+- [apps/api/src/modules/auth/bootstrap.ts](/home/const/solashare/apps/api/src/modules/auth/bootstrap.ts)
+- [apps/api/src/modules/auth/utils.ts](/home/const/solashare/apps/api/src/modules/auth/utils.ts)
 
 Responsibilities:
 
@@ -60,10 +60,10 @@ Main endpoint families:
 
 Files:
 
-- [src/modules/assets/routes.ts](/home/const/solashare/src/modules/assets/routes.ts)
-- [src/modules/assets/service.ts](/home/const/solashare/src/modules/assets/service.ts)
-- [src/modules/assets/contracts.ts](/home/const/solashare/src/modules/assets/contracts.ts)
-- [src/modules/assets/domain.ts](/home/const/solashare/src/modules/assets/domain.ts)
+- [apps/api/src/modules/assets/routes.ts](/home/const/solashare/apps/api/src/modules/assets/routes.ts)
+- [apps/api/src/modules/assets/service.ts](/home/const/solashare/apps/api/src/modules/assets/service.ts)
+- [apps/api/src/modules/assets/contracts.ts](/home/const/solashare/apps/api/src/modules/assets/contracts.ts)
+- [apps/api/src/modules/assets/domain.ts](/home/const/solashare/apps/api/src/modules/assets/domain.ts)
 
 Responsibilities:
 
@@ -85,9 +85,9 @@ Main endpoints:
 
 Files:
 
-- [src/modules/issuer/routes.ts](/home/const/solashare/src/modules/issuer/routes.ts)
-- [src/modules/issuer/service.ts](/home/const/solashare/src/modules/issuer/service.ts)
-- [src/modules/issuer/contracts.ts](/home/const/solashare/src/modules/issuer/contracts.ts)
+- [apps/api/src/modules/issuer/routes.ts](/home/const/solashare/apps/api/src/modules/issuer/routes.ts)
+- [apps/api/src/modules/issuer/service.ts](/home/const/solashare/apps/api/src/modules/issuer/service.ts)
+- [apps/api/src/modules/issuer/contracts.ts](/home/const/solashare/apps/api/src/modules/issuer/contracts.ts)
 
 Responsibilities:
 
@@ -113,9 +113,9 @@ Main endpoint families:
 
 Files:
 
-- [src/modules/me/routes.ts](/home/const/solashare/src/modules/me/routes.ts)
-- [src/modules/me/service.ts](/home/const/solashare/src/modules/me/service.ts)
-- [src/modules/me/contracts.ts](/home/const/solashare/src/modules/me/contracts.ts)
+- [apps/api/src/modules/me/routes.ts](/home/const/solashare/apps/api/src/modules/me/routes.ts)
+- [apps/api/src/modules/me/service.ts](/home/const/solashare/apps/api/src/modules/me/service.ts)
+- [apps/api/src/modules/me/contracts.ts](/home/const/solashare/apps/api/src/modules/me/contracts.ts)
 
 Responsibilities:
 
@@ -138,10 +138,10 @@ Main endpoints:
 
 Files:
 
-- [src/modules/investments/routes.ts](/home/const/solashare/src/modules/investments/routes.ts)
-- [src/modules/investments/service.ts](/home/const/solashare/src/modules/investments/service.ts)
-- [src/modules/investments/contracts.ts](/home/const/solashare/src/modules/investments/contracts.ts)
-- [src/modules/investments/domain.ts](/home/const/solashare/src/modules/investments/domain.ts)
+- [apps/api/src/modules/investments/routes.ts](/home/const/solashare/apps/api/src/modules/investments/routes.ts)
+- [apps/api/src/modules/investments/service.ts](/home/const/solashare/apps/api/src/modules/investments/service.ts)
+- [apps/api/src/modules/investments/contracts.ts](/home/const/solashare/apps/api/src/modules/investments/contracts.ts)
+- [apps/api/src/modules/investments/domain.ts](/home/const/solashare/apps/api/src/modules/investments/domain.ts)
 
 Responsibilities:
 
@@ -158,10 +158,10 @@ Main endpoints:
 
 Files:
 
-- [src/modules/claims/routes.ts](/home/const/solashare/src/modules/claims/routes.ts)
-- [src/modules/claims/service.ts](/home/const/solashare/src/modules/claims/service.ts)
-- [src/modules/claims/contracts.ts](/home/const/solashare/src/modules/claims/contracts.ts)
-- [src/modules/claims/domain.ts](/home/const/solashare/src/modules/claims/domain.ts)
+- [apps/api/src/modules/claims/routes.ts](/home/const/solashare/apps/api/src/modules/claims/routes.ts)
+- [apps/api/src/modules/claims/service.ts](/home/const/solashare/apps/api/src/modules/claims/service.ts)
+- [apps/api/src/modules/claims/contracts.ts](/home/const/solashare/apps/api/src/modules/claims/contracts.ts)
+- [apps/api/src/modules/claims/domain.ts](/home/const/solashare/apps/api/src/modules/claims/domain.ts)
 
 Responsibilities:
 
@@ -177,10 +177,10 @@ Main endpoints:
 
 Files:
 
-- [src/modules/transactions/routes.ts](/home/const/solashare/src/modules/transactions/routes.ts)
-- [src/modules/transactions/service.ts](/home/const/solashare/src/modules/transactions/service.ts)
-- [src/modules/transactions/contracts.ts](/home/const/solashare/src/modules/transactions/contracts.ts)
-- [src/modules/transactions/settlement-service.ts](/home/const/solashare/src/modules/transactions/settlement-service.ts)
+- [apps/api/src/modules/transactions/routes.ts](/home/const/solashare/apps/api/src/modules/transactions/routes.ts)
+- [apps/api/src/modules/transactions/service.ts](/home/const/solashare/apps/api/src/modules/transactions/service.ts)
+- [apps/api/src/modules/transactions/contracts.ts](/home/const/solashare/apps/api/src/modules/transactions/contracts.ts)
+- [apps/api/src/modules/transactions/settlement-service.ts](/home/const/solashare/apps/api/src/modules/transactions/settlement-service.ts)
 
 Responsibilities:
 
@@ -196,9 +196,9 @@ Main endpoints:
 
 Files:
 
-- [src/modules/uploads/routes.ts](/home/const/solashare/src/modules/uploads/routes.ts)
-- [src/modules/uploads/service.ts](/home/const/solashare/src/modules/uploads/service.ts)
-- [src/modules/uploads/contracts.ts](/home/const/solashare/src/modules/uploads/contracts.ts)
+- [apps/api/src/modules/uploads/routes.ts](/home/const/solashare/apps/api/src/modules/uploads/routes.ts)
+- [apps/api/src/modules/uploads/service.ts](/home/const/solashare/apps/api/src/modules/uploads/service.ts)
+- [apps/api/src/modules/uploads/contracts.ts](/home/const/solashare/apps/api/src/modules/uploads/contracts.ts)
 
 Responsibilities:
 
@@ -216,10 +216,10 @@ Main endpoints:
 
 Files:
 
-- [src/modules/notifications/routes.ts](/home/const/solashare/src/modules/notifications/routes.ts)
-- [src/modules/notifications/service.ts](/home/const/solashare/src/modules/notifications/service.ts)
-- [src/modules/notifications/contracts.ts](/home/const/solashare/src/modules/notifications/contracts.ts)
-- [src/modules/notifications/index.ts](/home/const/solashare/src/modules/notifications/index.ts)
+- [apps/api/src/modules/notifications/routes.ts](/home/const/solashare/apps/api/src/modules/notifications/routes.ts)
+- [apps/api/src/modules/notifications/service.ts](/home/const/solashare/apps/api/src/modules/notifications/service.ts)
+- [apps/api/src/modules/notifications/contracts.ts](/home/const/solashare/apps/api/src/modules/notifications/contracts.ts)
+- [apps/api/src/modules/notifications/index.ts](/home/const/solashare/apps/api/src/modules/notifications/index.ts)
 
 Responsibilities:
 
@@ -235,11 +235,11 @@ Main endpoint:
 
 Files:
 
-- [src/modules/webhook/routes.ts](/home/const/solashare/src/modules/webhook/routes.ts)
-- [src/modules/webhook/service.ts](/home/const/solashare/src/modules/webhook/service.ts)
-- [src/modules/webhook/contracts.ts](/home/const/solashare/src/modules/webhook/contracts.ts)
-- [src/modules/webhook/index.ts](/home/const/solashare/src/modules/webhook/index.ts)
-- [src/modules/webhook/test/webhook.test.ts](/home/const/solashare/src/modules/webhook/test/webhook.test.ts)
+- [apps/api/src/modules/webhook/routes.ts](/home/const/solashare/apps/api/src/modules/webhook/routes.ts)
+- [apps/api/src/modules/webhook/service.ts](/home/const/solashare/apps/api/src/modules/webhook/service.ts)
+- [apps/api/src/modules/webhook/contracts.ts](/home/const/solashare/apps/api/src/modules/webhook/contracts.ts)
+- [apps/api/src/modules/webhook/index.ts](/home/const/solashare/apps/api/src/modules/webhook/index.ts)
+- [apps/api/src/modules/webhook/test/webhook.test.ts](/home/const/solashare/apps/api/src/modules/webhook/test/webhook.test.ts)
 
 Responsibilities:
 
@@ -256,8 +256,8 @@ Main endpoints:
 
 Files:
 
-- [src/modules/indexer/routes.ts](/home/const/solashare/src/modules/indexer/routes.ts)
-- [src/modules/indexer/index.ts](/home/const/solashare/src/modules/indexer/index.ts)
+- [apps/api/src/modules/indexer/routes.ts](/home/const/solashare/apps/api/src/modules/indexer/routes.ts)
+- [apps/api/src/modules/indexer/index.ts](/home/const/solashare/apps/api/src/modules/indexer/index.ts)
 
 Responsibilities:
 
@@ -278,9 +278,9 @@ Main endpoints:
 
 Files:
 
-- [src/modules/admin/routes.ts](/home/const/solashare/src/modules/admin/routes.ts)
-- [src/modules/admin/service.ts](/home/const/solashare/src/modules/admin/service.ts)
-- [src/modules/admin/contracts.ts](/home/const/solashare/src/modules/admin/contracts.ts)
+- [apps/api/src/modules/admin/routes.ts](/home/const/solashare/apps/api/src/modules/admin/routes.ts)
+- [apps/api/src/modules/admin/service.ts](/home/const/solashare/apps/api/src/modules/admin/service.ts)
+- [apps/api/src/modules/admin/contracts.ts](/home/const/solashare/apps/api/src/modules/admin/contracts.ts)
 
 Responsibilities:
 
@@ -301,13 +301,13 @@ Main endpoint families:
 
 ## Shared Backend Modules
 
-### `src/modules/shared`
+### `apps/api/src/modules/shared`
 
 Files:
 
-- [src/modules/shared/contracts.ts](/home/const/solashare/src/modules/shared/contracts.ts)
-- [src/modules/shared/domain.ts](/home/const/solashare/src/modules/shared/domain.ts)
-- [src/modules/shared/utils.ts](/home/const/solashare/src/modules/shared/utils.ts)
+- [apps/api/src/modules/shared/contracts.ts](/home/const/solashare/apps/api/src/modules/shared/contracts.ts)
+- [apps/api/src/modules/shared/domain.ts](/home/const/solashare/apps/api/src/modules/shared/domain.ts)
+- [apps/api/src/modules/shared/utils.ts](/home/const/solashare/apps/api/src/modules/shared/utils.ts)
 
 Responsibilities:
 
@@ -317,43 +317,43 @@ Responsibilities:
 
 ## Shared Libraries
 
-### `src/lib`
+### `apps/api/src/lib`
 
 Key shared library files:
 
-- [src/lib/api-error.ts](/home/const/solashare/src/lib/api-error.ts)
+- [apps/api/src/lib/api-error.ts](/home/const/solashare/apps/api/src/lib/api-error.ts)
   Structured application error primitive for predictable API failures.
 
-- [src/lib/db.ts](/home/const/solashare/src/lib/db.ts)
+- [apps/api/src/lib/db.ts](/home/const/solashare/apps/api/src/lib/db.ts)
   PostgreSQL connection and shared DB access setup.
 
-- [src/lib/logger.ts](/home/const/solashare/src/lib/logger.ts)
+- [apps/api/src/lib/logger.ts](/home/const/solashare/apps/api/src/lib/logger.ts)
   Pino logger configuration and logging entrypoint.
 
-- [src/lib/queue.ts](/home/const/solashare/src/lib/queue.ts)
+- [apps/api/src/lib/queue.ts](/home/const/solashare/apps/api/src/lib/queue.ts)
   BullMQ queue wiring and worker bootstrap used before serving requests.
 
-- [src/lib/redis.ts](/home/const/solashare/src/lib/redis.ts)
+- [apps/api/src/lib/redis.ts](/home/const/solashare/apps/api/src/lib/redis.ts)
   Shared Redis client configuration.
 
-- [src/lib/websocket.ts](/home/const/solashare/src/lib/websocket.ts)
+- [apps/api/src/lib/websocket.ts](/home/const/solashare/apps/api/src/lib/websocket.ts)
   WebSocket support utilities for notification flows.
 
-### `src/lib/solana`
+### `apps/api/src/lib/solana`
 
 Files:
 
-- [src/lib/solana/config.ts](/home/const/solashare/src/lib/solana/config.ts)
-- [src/lib/solana/faucet.ts](/home/const/solashare/src/lib/solana/faucet.ts)
-- [src/lib/solana/index.ts](/home/const/solashare/src/lib/solana/index.ts)
-- [src/lib/solana/indexer.ts](/home/const/solashare/src/lib/solana/indexer.ts)
-- [src/lib/solana/pda.ts](/home/const/solashare/src/lib/solana/pda.ts)
-- [src/lib/solana/token-program.ts](/home/const/solashare/src/lib/solana/token-program.ts)
-- [src/lib/solana/transactions.ts](/home/const/solashare/src/lib/solana/transactions.ts)
-- [src/lib/solana/types.ts](/home/const/solashare/src/lib/solana/types.ts)
-- [src/lib/solana/utils.ts](/home/const/solashare/src/lib/solana/utils.ts)
-- [src/lib/solana/verification.ts](/home/const/solashare/src/lib/solana/verification.ts)
-- [src/lib/solana/wallet-challenge.ts](/home/const/solashare/src/lib/solana/wallet-challenge.ts)
+- [apps/api/src/lib/solana/config.ts](/home/const/solashare/apps/api/src/lib/solana/config.ts)
+- [apps/api/src/lib/solana/faucet.ts](/home/const/solashare/apps/api/src/lib/solana/faucet.ts)
+- [apps/api/src/lib/solana/index.ts](/home/const/solashare/apps/api/src/lib/solana/index.ts)
+- [apps/api/src/lib/solana/indexer.ts](/home/const/solashare/apps/api/src/lib/solana/indexer.ts)
+- [apps/api/src/lib/solana/pda.ts](/home/const/solashare/apps/api/src/lib/solana/pda.ts)
+- [apps/api/src/lib/solana/token-program.ts](/home/const/solashare/apps/api/src/lib/solana/token-program.ts)
+- [apps/api/src/lib/solana/transactions.ts](/home/const/solashare/apps/api/src/lib/solana/transactions.ts)
+- [apps/api/src/lib/solana/types.ts](/home/const/solashare/apps/api/src/lib/solana/types.ts)
+- [apps/api/src/lib/solana/utils.ts](/home/const/solashare/apps/api/src/lib/solana/utils.ts)
+- [apps/api/src/lib/solana/verification.ts](/home/const/solashare/apps/api/src/lib/solana/verification.ts)
+- [apps/api/src/lib/solana/wallet-challenge.ts](/home/const/solashare/apps/api/src/lib/solana/wallet-challenge.ts)
 
 Responsibilities:
 
@@ -366,28 +366,28 @@ Responsibilities:
 
 ## Plugins
 
-- [src/plugins/auth.ts](/home/const/solashare/src/plugins/auth.ts)
+- [apps/api/src/plugins/auth.ts](/home/const/solashare/apps/api/src/plugins/auth.ts)
   Parses and verifies auth state, and exposes role-check helpers for routes.
 
-- [src/plugins/openapi.ts](/home/const/solashare/src/plugins/openapi.ts)
+- [apps/api/src/plugins/openapi.ts](/home/const/solashare/apps/api/src/plugins/openapi.ts)
   Generates and serves OpenAPI/Scalar documentation.
 
 ## Tests
 
 The backend test suite currently includes:
 
-- [src/tests/api.integration.test.ts](/home/const/solashare/src/tests/api.integration.test.ts)
-- [src/tests/assets.integration.test.ts](/home/const/solashare/src/tests/assets.integration.test.ts)
-- [src/tests/auth.integration.test.ts](/home/const/solashare/src/tests/auth.integration.test.ts)
-- [src/tests/auth.unit.test.ts](/home/const/solashare/src/tests/auth.unit.test.ts)
-- [src/tests/domain.unit.test.ts](/home/const/solashare/src/tests/domain.unit.test.ts)
-- [src/tests/investments.integration.test.ts](/home/const/solashare/src/tests/investments.integration.test.ts)
-- [src/tests/issuer-admin.integration.test.ts](/home/const/solashare/src/tests/issuer-admin.integration.test.ts)
-- [src/tests/revenue-claims.integration.test.ts](/home/const/solashare/src/tests/revenue-claims.integration.test.ts)
-- [src/tests/shared-utils.unit.test.ts](/home/const/solashare/src/tests/shared-utils.unit.test.ts)
-- [src/tests/system.integration.test.ts](/home/const/solashare/src/tests/system.integration.test.ts)
-- [src/tests/webhook-queue.integration.test.ts](/home/const/solashare/src/tests/webhook-queue.integration.test.ts)
-- [src/tests/workflow.integration.test.ts](/home/const/solashare/src/tests/workflow.integration.test.ts)
+- [apps/api/src/tests/api.integration.test.ts](/home/const/solashare/apps/api/src/tests/api.integration.test.ts)
+- [apps/api/src/tests/assets.integration.test.ts](/home/const/solashare/apps/api/src/tests/assets.integration.test.ts)
+- [apps/api/src/tests/auth.integration.test.ts](/home/const/solashare/apps/api/src/tests/auth.integration.test.ts)
+- [apps/api/src/tests/auth.unit.test.ts](/home/const/solashare/apps/api/src/tests/auth.unit.test.ts)
+- [apps/api/src/tests/domain.unit.test.ts](/home/const/solashare/apps/api/src/tests/domain.unit.test.ts)
+- [apps/api/src/tests/investments.integration.test.ts](/home/const/solashare/apps/api/src/tests/investments.integration.test.ts)
+- [apps/api/src/tests/issuer-admin.integration.test.ts](/home/const/solashare/apps/api/src/tests/issuer-admin.integration.test.ts)
+- [apps/api/src/tests/revenue-claims.integration.test.ts](/home/const/solashare/apps/api/src/tests/revenue-claims.integration.test.ts)
+- [apps/api/src/tests/shared-utils.unit.test.ts](/home/const/solashare/apps/api/src/tests/shared-utils.unit.test.ts)
+- [apps/api/src/tests/system.integration.test.ts](/home/const/solashare/apps/api/src/tests/system.integration.test.ts)
+- [apps/api/src/tests/webhook-queue.integration.test.ts](/home/const/solashare/apps/api/src/tests/webhook-queue.integration.test.ts)
+- [apps/api/src/tests/workflow.integration.test.ts](/home/const/solashare/apps/api/src/tests/workflow.integration.test.ts)
 
 These cover the main off-chain behavior and should be consulted when changing endpoint contracts or
 workflow state transitions.
@@ -399,8 +399,8 @@ Repository scripts outside the backend runtime:
 - [scripts/bootstrap-admin.ts](/home/const/solashare/scripts/bootstrap-admin.ts)
   Initial admin bootstrap helper.
 
-- [scripts/dev-all.sh](/home/const/solashare/scripts/dev-all.sh)
-  Multi-service local development helper.
+- [scripts/dev-workspace.sh](/home/const/solashare/scripts/dev-workspace.sh)
+  Starts the backend and frontend together from the repository root.
 
 - [scripts/start-localnet.sh](/home/const/solashare/scripts/start-localnet.sh)
   Solana localnet startup helper.
@@ -416,20 +416,20 @@ Repository scripts outside the backend runtime:
 
 ## Adjacent Subprojects
 
-### `solashare_program`
+### `programs/solashare-protocol`
 
 Files and roles:
 
-- [solashare_program/Anchor.toml](/home/const/solashare/solashare_program/Anchor.toml)
+- [programs/solashare-protocol/Anchor.toml](/home/const/solashare/programs/solashare-protocol/Anchor.toml)
   Anchor workspace configuration.
 
-- [solashare_program/programs/solashare_program/src/lib.rs](/home/const/solashare/solashare_program/programs/solashare_program/src/lib.rs)
+- [programs/solashare-protocol/programs/solashare_protocol/src/lib.rs](/home/const/solashare/programs/solashare-protocol/programs/solashare_protocol/src/lib.rs)
   On-chain program source.
 
-- [solashare_program/tests/solashare_program.ts](/home/const/solashare/solashare_program/tests/solashare_program.ts)
+- [programs/solashare-protocol/tests/solashare_protocol.ts](/home/const/solashare/programs/solashare-protocol/tests/solashare_protocol.ts)
   Program tests.
 
-- [solashare_program/migrations/deploy.ts](/home/const/solashare/solashare_program/migrations/deploy.ts)
+- [programs/solashare-protocol/migrations/deploy.ts](/home/const/solashare/programs/solashare-protocol/migrations/deploy.ts)
   Deployment script.
 
 Purpose:
@@ -440,15 +440,15 @@ Detailed reference:
 
 - [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md)
 
-### `solashare-frontend`
+### `apps/web`
 
 Important areas:
 
-- [solashare-frontend/src/app/layout.tsx](/home/const/solashare/solashare-frontend/src/app/layout.tsx)
-- [solashare-frontend/src/app/page.tsx](/home/const/solashare/solashare-frontend/src/app/page.tsx)
-- [solashare-frontend/src/lib/api.ts](/home/const/solashare/solashare-frontend/src/lib/api.ts)
-- [solashare-frontend/src/lib/auth.tsx](/home/const/solashare/solashare-frontend/src/lib/auth.tsx)
-- [solashare-frontend/src/lib/solana.ts](/home/const/solashare/solashare-frontend/src/lib/solana.ts)
+- [apps/web/src/app/layout.tsx](/home/const/solashare/apps/web/src/app/layout.tsx)
+- [apps/web/src/app/page.tsx](/home/const/solashare/apps/web/src/app/page.tsx)
+- [apps/web/src/lib/api.ts](/home/const/solashare/apps/web/src/lib/api.ts)
+- [apps/web/src/lib/auth.tsx](/home/const/solashare/apps/web/src/lib/auth.tsx)
+- [apps/web/src/lib/solana.ts](/home/const/solashare/apps/web/src/lib/solana.ts)
 
 Purpose:
 

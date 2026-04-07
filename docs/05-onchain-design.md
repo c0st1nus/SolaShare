@@ -5,7 +5,7 @@
 The Solana program is responsible for trust-critical financial state transitions.
 
 In the current repository, the on-chain implementation lives in
-[solashare_program/programs/solashare_program/src/lib.rs](/home/const/solashare/solashare_program/programs/solashare_program/src/lib.rs).
+[programs/solashare-protocol/programs/solashare_protocol/src/lib.rs](/home/const/solashare/programs/solashare-protocol/programs/solashare_protocol/src/lib.rs).
 This document describes the actual design currently encoded there and the intended architectural
 boundaries around it.
 
@@ -389,7 +389,7 @@ This document should be read together with:
 
 - [docs/06-sync-indexer.md](/home/const/solashare/docs/06-sync-indexer.md)
 - [docs/14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md)
-- [src/lib/solana](/home/const/solashare/src/lib/solana)
+- [apps/api/src/lib/solana](/home/const/solashare/apps/api/src/lib/solana)
 
 `docs/14-onchain-workspace.md` is the more implementation-centric reference for the current Anchor
 workspace, while this document focuses on the architectural design and trust model.

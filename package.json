@@ -1,21 +1,37 @@
 {
-  "name": "solashare",
-  "version": "0.1.1",
+  "name": "solashare-monorepo",
+  "version": "0.2.0",
+  "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "programs/*"
   ],
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "lint": "biome lint .",
+    "dev": "bun run dev:api",
+    "dev:api": "bun --cwd apps/api run dev",
+    "dev:web": "bun --cwd apps/web run dev",
+    "dev:stack": "./scripts/dev-workspace.sh",
+    "start:api": "bun --cwd apps/api run start",
+    "build:web": "bun --cwd apps/web run build",
+    "start:web": "bun --cwd apps/web run start",
+    "check:web": "bun --cwd apps/web run check",
+    "lint:web": "bun --cwd apps/web run lint",
+    "typecheck:web": "bun --cwd apps/web run typecheck",
+    "onchain:lint": "bun --cwd programs/solashare-protocol run lint",
+    "onchain:test": "cd programs/solashare-protocol && yarn run test",
+    "pm2:start": "pm2 start ecosystem.cjs",
+    "pm2:stop": "pm2 delete ecosystem.cjs",
+    "pm2:restart": "pm2 restart ecosystem.cjs",
+    "lint": "biome lint apps/api scripts docs AGENTS.md README.md package.json tsconfig.json drizzle.config.ts ecosystem.cjs apps/web/package.json apps/web/scripts apps/web/tsconfig.json apps/web/tailwind.config.ts",
     "format": "biome format --write .",
     "typecheck": "./node_modules/.bin/tsc --noEmit -p tsconfig.json",
-    "check": "bun run typecheck && biome check .",
+    "check": "bun run typecheck && biome check apps/api scripts docs AGENTS.md README.md package.json tsconfig.json drizzle.config.ts ecosystem.cjs apps/web/package.json apps/web/scripts apps/web/tsconfig.json apps/web/tailwind.config.ts",
     "bootstrap:admin": "bun run scripts/bootstrap-admin.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "test": "NODE_ENV=test bun test --max-concurrency=1"
+    "test": "NODE_ENV=test bun test --max-concurrency=1 apps/api/src/tests"
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.1",
@@ -38,6 +54,5 @@
     "@biomejs/biome": "^2.4.9",
     "bun-types": "latest",
     "drizzle-kit": "^0.31.10"
-  },
-  "module": "src/index.js"
+  }
 }

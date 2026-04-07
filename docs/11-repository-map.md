@@ -1,206 +1,88 @@
 # Repository Map
 
-This document explains how the SolaShare repository is organized today and where to look for each
-technical concern.
+This document explains the monorepo structure and where each concern lives.
 
-## Top-Level Layout
+## Top Level
 
-- `README.md`
-  Main entrypoint for quickstart, repository scope, and documentation navigation.
-
-- `docs/`
-  Architecture, API, schema, security, deployment, and repository-reference documentation.
-
-- `src/`
-  Main Bun + Elysia backend source code.
-
-- `drizzle/`
-  Generated SQL migrations and Drizzle metadata snapshots.
-
-- `scripts/`
-  Local development and operator helper scripts.
-
-- `solashare_program/`
-  Solana on-chain workspace built around Anchor.
-
-- `solashare-frontend/`
-  Separate Next.js frontend application for the product experience.
-
-- `research/`
-  Research artifact source and rendered output.
-
-- `docker-compose.yml`
-  Local infrastructure for PostgreSQL, Redis, and MinIO.
-
-- `.env.example`
-  Baseline environment variable template for local boot.
-
-## Backend Source Layout
-
-The backend lives under `src/` and is intentionally split by responsibility.
-
-### Runtime Entry
-
-- [src/index.ts](/home/const/solashare/src/index.ts)
-  Starts queue workers, boots the HTTP server, and logs service startup.
-
-- [src/app.ts](/home/const/solashare/src/app.ts)
-  Assembles the Elysia application, registers route groups, configures CORS, mounts OpenAPI, and
-  centralizes top-level error handling.
-
-### Configuration
-
-- [src/config/env.ts](/home/const/solashare/src/config/env.ts)
-  Validates all environment variables with Zod and fails fast on invalid configuration.
-
-### Database
-
-- [src/db/index.ts](/home/const/solashare/src/db/index.ts)
-  Exposes the Drizzle database handle.
-
-- [src/db/schema.ts](/home/const/solashare/src/db/schema.ts)
-  Defines the application schema and shared enums for PostgreSQL.
-
-### Shared Libraries
-
-- `src/lib/`
-  Shared infrastructure adapters and reusable service helpers.
-
-Important areas:
-
-- `src/lib/db.ts`: low-level database connection setup
-- `src/lib/redis.ts`: Redis client setup
-- `src/lib/queue.ts`: BullMQ queue and worker bootstrapping
-- `src/lib/logger.ts`: Pino logger instance and logger conventions
-- `src/lib/websocket.ts`: notification transport helpers
-- `src/lib/api-error.ts`: structured application error type
-- `src/lib/solana/`: Solana-specific integration layer for clients, PDAs, transactions, faucet,
-  token helpers, indexer behavior, wallet challenge flow, and typed integration helpers
-
-### Elysia Plugins
-
-- `src/plugins/auth.ts`
-  Auth plugin and role/auth enforcement helpers used by route groups.
-
-- `src/plugins/openapi.ts`
-  OpenAPI/Scalar registration and API documentation wiring.
-
-### Domain Modules
-
-- `src/modules/`
-  Domain-oriented backend modules. Each module generally keeps route contracts, route handlers, and
-  service logic together.
-
-The currently mounted route groups are:
-
-- `admin`
+- `apps/api`
+  Backend application package.
+- `apps/web`
+  Frontend application package.
+- `programs/solashare-protocol`
+  Anchor workspace for the Solana program.
+- `docs`
+  Technical and operational documentation.
+- `scripts`
+  Root helper scripts.
+- `drizzle`
+  SQL migrations and Drizzle metadata.
 - `assets`
-- `auth`
-- `claims`
-- `indexer`
-- `investments`
-- `issuer`
-- `me`
-- `notifications`
-- `system`
-- `transactions`
-- `uploads`
-- `webhook`
+  Repository-level media assets.
+- `research`
+  Product and market research artifacts.
 
-Detailed descriptions for each one live in
-[12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md).
+## Backend
 
-### Tests
+Backend source code lives under `apps/api/src`.
 
-- `src/tests/`
-  Unit and integration coverage for auth, assets, issuer/admin workflows, investment flows,
-  webhook-backed processing, and system behavior.
+Main areas:
 
-## Infrastructure And State
+- [apps/api/src/index.ts](/home/const/solashare/apps/api/src/index.ts)
+  Process entrypoint and server boot.
+- [apps/api/src/app.ts](/home/const/solashare/apps/api/src/app.ts)
+  Elysia app assembly and route registration.
+- [apps/api/src/config](/home/const/solashare/apps/api/src/config)
+  Env parsing and runtime config.
+- [apps/api/src/db](/home/const/solashare/apps/api/src/db)
+  Drizzle schema and DB access.
+- [apps/api/src/lib](/home/const/solashare/apps/api/src/lib)
+  Shared infrastructure adapters.
+- [apps/api/src/modules](/home/const/solashare/apps/api/src/modules)
+  Domain modules and services.
+- [apps/api/src/plugins](/home/const/solashare/apps/api/src/plugins)
+  Elysia plugins.
+- [apps/api/src/tests](/home/const/solashare/apps/api/src/tests)
+  Unit and integration tests.
 
-### Migrations
+## Frontend
 
-- `drizzle/*.sql`
-  Generated SQL migration files tracked in version control.
-
-- `drizzle/meta/*.json`
-  Drizzle snapshots and migration journal metadata.
-
-### Local Infrastructure
-
-- [docker-compose.yml](/home/const/solashare/docker-compose.yml)
-  Starts local PostgreSQL, Redis, MinIO, and a one-shot MinIO bucket initializer.
-
-### Example Configuration
-
-- [.env.example](/home/const/solashare/.env.example)
-  Captures the expected local environment variable surface for booting the backend.
-
-## Scripts
-
-- `scripts/bootstrap-admin.ts`
-  Creates the initial admin account for a fresh environment.
-
-- `scripts/dev-all.sh`
-  Helper for running multiple local services together.
-
-- `scripts/start-localnet.sh`
-  Starts a Solana localnet-oriented helper flow.
-
-- `scripts/stop-localnet.sh`
-  Stops the localnet helper flow.
-
-- `scripts/setup-mock-usdc.ts`
-  Prepares local mock USDC-related setup for development flows.
-
-- `scripts/test-verification.ts`
-  Verification-related local helper script.
-
-## Frontend Subproject
-
-- `solashare-frontend/`
-  Standalone Next.js application. This is not the main backend service, but it is part of the
-  repository's product surface.
-
-Important frontend areas:
-
-- `src/app/`: route segments and pages
-- `src/components/`: UI components and shells
-- `src/lib/`: frontend API, auth, Solana, upload, and session helpers
-- `public/`: product assets
-
-## On-Chain Subproject
-
-- `solashare_program/`
-  Anchor-based Solana program workspace with Rust program code, tests, and migration scripts.
+Frontend code lives under `apps/web`.
 
 Important areas:
 
-- `programs/solashare_program/src/lib.rs`: Solana program entrypoint
-- `tests/solashare_program.ts`: program tests
-- `migrations/deploy.ts`: deployment helper
-- `Anchor.toml`: Anchor workspace configuration
+- [apps/web/src/app](/home/const/solashare/apps/web/src/app)
+- [apps/web/src/components](/home/const/solashare/apps/web/src/components)
+- [apps/web/src/lib](/home/const/solashare/apps/web/src/lib)
+- [apps/web/public](/home/const/solashare/apps/web/public)
 
-Use
-[14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md) for the full
-instruction, account, dependency, and PDA reference.
+## On-Chain Workspace
 
-## Research Artifacts
+The Anchor workspace lives under `programs/solashare-protocol`.
 
-- `research/research.pdf`
-  Rendered research document for product or market context.
+Important areas:
 
-- `research/research.typ`
-  Typst source used to generate the research document.
+- [Anchor.toml](/home/const/solashare/programs/solashare-protocol/Anchor.toml)
+- [package.json](/home/const/solashare/programs/solashare-protocol/package.json)
+- [migrations/deploy.ts](/home/const/solashare/programs/solashare-protocol/migrations/deploy.ts)
+- [programs/solashare_protocol/src/lib.rs](/home/const/solashare/programs/solashare-protocol/programs/solashare_protocol/src/lib.rs)
+- [tests/solashare_protocol.ts](/home/const/solashare/programs/solashare-protocol/tests/solashare_protocol.ts)
+
+## Root Scripts
+
+- [scripts/bootstrap-admin.ts](/home/const/solashare/scripts/bootstrap-admin.ts)
+- [scripts/dev-workspace.sh](/home/const/solashare/scripts/dev-workspace.sh)
+- [scripts/start-localnet.sh](/home/const/solashare/scripts/start-localnet.sh)
+- [scripts/stop-localnet.sh](/home/const/solashare/scripts/stop-localnet.sh)
+- [scripts/setup-mock-usdc.ts](/home/const/solashare/scripts/setup-mock-usdc.ts)
+- [scripts/test-verification.ts](/home/const/solashare/scripts/test-verification.ts)
 
 ## Operational Reading Guide
 
-Use this map to locate the right material quickly:
-
-- API behavior: [04-api-spec.md](/home/const/solashare/docs/04-api-spec.md)
-- domain concepts: [02-domain-model.md](/home/const/solashare/docs/02-domain-model.md)
-- schema details: [03-database-schema.md](/home/const/solashare/docs/03-database-schema.md)
-- Solana boundaries: [05-onchain-design.md](/home/const/solashare/docs/05-onchain-design.md)
-- sync and reconciliation: [06-sync-indexer.md](/home/const/solashare/docs/06-sync-indexer.md)
-- dependencies and env:
+- API and module behavior:
+  [12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md)
+- Runtime and env:
   [13-dependencies-and-runtime.md](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+- On-chain workspace:
+  [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md)
+- Monorepo workflows:
+  [15-monorepo-operations.md](/home/const/solashare/docs/15-monorepo-operations.md)

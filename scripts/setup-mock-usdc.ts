@@ -7,9 +7,9 @@ import {
   sendAndConfirmTransaction,
   Transaction,
 } from "@solana/web3.js";
-import { env } from "../src/config/env";
-import { payerKeypair } from "../src/lib/solana/config";
-import { resolveTokenProgramForMint } from "../src/lib/solana/token-program";
+import { env } from "../apps/api/src/config/env";
+import { payerKeypair } from "../apps/api/src/lib/solana/config";
+import { resolveTokenProgramForMint } from "../apps/api/src/lib/solana/token-program";
 
 const rpcUrl = env.SOLANA_RPC_URL || "http://127.0.0.1:8899";
 const connection = new Connection(rpcUrl, "confirmed");
