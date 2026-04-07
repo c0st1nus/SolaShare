@@ -1,77 +1,119 @@
-# SolaShare Technical Documentation
+# SolaShare Documentation Index
 
-This directory contains the technical documentation for the SolaShare MVP.
+This directory is the primary technical documentation set for the SolaShare repository.
 
-## Contents
+Use it in two ways:
 
-- `01-architecture-overview.md` — high-level system architecture
-- `02-domain-model.md` — core business entities and relationships
-- `03-database-schema.md` — PostgreSQL schema design
-- `04-api-spec.md` — REST API contract for MVP
-- `05-onchain-design.md` — Solana program accounts and instructions
-- `06-sync-indexer.md` — blockchain sync and indexing strategy
-- `07-core-flows.md` — end-to-end product flows
-- `08-storage-and-documents.md` — storage architecture for metadata and proof files
-- `09-security-and-operational-risks.md` — key technical and operational risks
-- `10-deployment-and-roadmap.md` — deployment plan and phased roadmap
-- `TODO.md` — active implementation backlog and pending product tasks
+- as an architecture reference for the backend, data model, and Solana integration
+- as a navigation layer for understanding how the repository is split across backend, frontend,
+  on-chain, research, and operational materials
 
-## MVP Goal
+## Recommended Reading Order
 
-SolaShare is an MVP for tokenizing yield-generating green energy assets on Solana.
+If you are new to the project, read in this order:
 
-The first vertical is solar energy infrastructure, but the architecture is designed to be extensible to other eco-assets such as wind, small hydro, EV charging, and other yield-bearing green infrastructure.
+1. [../README.md](/home/const/solashare/README.md)
+2. [01-architecture-overview.md](/home/const/solashare/docs/01-architecture-overview.md)
+3. [11-repository-map.md](/home/const/solashare/docs/11-repository-map.md)
+4. [12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md)
+5. [13-dependencies-and-runtime.md](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+6. [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md) if your task
+   touches Solana program behavior
+7. the domain-specific documents relevant to your task
 
-## Architecture Principle
+## Core Documents
 
-The system is split into three trust layers:
+- [01-architecture-overview.md](/home/const/solashare/docs/01-architecture-overview.md)
+  High-level system architecture, trust split, service boundaries, and design principles.
 
-1. **On-chain layer**
-   - ownership
-   - share minting
-   - revenue posting
-   - claim accounting
-   - immutable state transitions
+- [02-domain-model.md](/home/const/solashare/docs/02-domain-model.md)
+  Core entities, ownership and lifecycle concepts, and business-level relationships.
 
-2. **Off-chain application layer**
-   - user profiles
-   - asset metadata
-   - documents
-   - portfolio views
-   - notifications
-   - business logic orchestration
+- [03-database-schema.md](/home/const/solashare/docs/03-database-schema.md)
+  PostgreSQL and Drizzle schema design, normalized records, and read-model responsibilities.
 
-3. **Storage layer**
-   - public documents
-   - proof bundles
-   - technical passports
-   - reports
-   - media assets
+- [04-api-spec.md](/home/const/solashare/docs/04-api-spec.md)
+  Human-readable REST API contract, access matrix, conventions, and endpoint behavior.
 
-## Source of Truth
+- [05-onchain-design.md](/home/const/solashare/docs/05-onchain-design.md)
+  Solana account model, transaction responsibilities, and on-chain boundaries.
 
-- **On-chain** is the source of truth for ownership, distribution state, and claims.
-- **PostgreSQL** is the source of truth for product read models, metadata, and application UX.
-- **Object storage / Arweave / IPFS** is the source of truth for files and proofs.
+- [06-sync-indexer.md](/home/const/solashare/docs/06-sync-indexer.md)
+  Sync strategy for chain events, webhook ingestion, polling, and idempotent reconciliation.
 
-## MVP Scope
+- [07-core-flows.md](/home/const/solashare/docs/07-core-flows.md)
+  End-to-end product flows for issuance, investment, revenue, and claims.
 
-The MVP should fully support:
+- [08-storage-and-documents.md](/home/const/solashare/docs/08-storage-and-documents.md)
+  Document storage model, file metadata, proof organization, and object storage expectations.
 
-- create asset
-- define sale terms
-- mint fractional shares
-- invest in an asset
-- post revenue for a period
-- claim yield
-- display investor portfolio
-- display proof links and transaction history
+- [09-security-and-operational-risks.md](/home/const/solashare/docs/09-security-and-operational-risks.md)
+  Security posture, operational risks, and hardening considerations.
 
-## Out of Scope for Initial MVP
+- [10-deployment-and-roadmap.md](/home/const/solashare/docs/10-deployment-and-roadmap.md)
+  Deployment notes, phased rollout thinking, and roadmap direction.
 
-- full secondary market order book
-- advanced governance
-- automated AI verification
-- deep compliance stack
-- multi-currency settlement
-- advanced financial waterfalls
+## Repository Guides
+
+- [11-repository-map.md](/home/const/solashare/docs/11-repository-map.md)
+  Directory-by-directory guide to the repository, including backend source layout, scripts,
+  frontend, on-chain workspace, research, and supporting materials.
+
+- [12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md)
+  Reference for all backend submodules, shared libraries, Elysia plugins, tests, scripts, and
+  sibling subprojects.
+
+- [13-dependencies-and-runtime.md](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+  Dependency inventory, local infrastructure, environment variables, commands, and quickstart
+  operations.
+
+- [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md)
+  Dedicated reference for `solashare_program/`, including real dependencies, instructions,
+  accounts, PDA strategy, and backend integration points.
+
+## Working Documents
+
+- [TODO.md](/home/const/solashare/docs/TODO.md)
+  Active implementation backlog and follow-up items not yet folded into the main architecture set.
+
+## Related Repository Materials
+
+- [../TESTING_GUIDE.md](/home/const/solashare/TESTING_GUIDE.md)
+  Testing workflows and validation guidance.
+
+- [../DEPLOYMENT_COMPLETE.md](/home/const/solashare/DEPLOYMENT_COMPLETE.md)
+  Additional deployment notes.
+
+- [../research/research.pdf](/home/const/solashare/research/research.pdf)
+  Research artifact snapshot.
+
+- [../research/research.typ](/home/const/solashare/research/research.typ)
+  Typst source for the research artifact.
+
+## How To Use This Docs Set
+
+For common tasks:
+
+- implementing backend behavior: start with
+  [01-architecture-overview.md](/home/const/solashare/docs/01-architecture-overview.md),
+  [03-database-schema.md](/home/const/solashare/docs/03-database-schema.md),
+  [04-api-spec.md](/home/const/solashare/docs/04-api-spec.md), and
+  [12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md)
+- changing Solana behavior: start with
+  [05-onchain-design.md](/home/const/solashare/docs/05-onchain-design.md),
+  [06-sync-indexer.md](/home/const/solashare/docs/06-sync-indexer.md), and the
+  dedicated workspace reference
+  [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md)
+- booting the project locally: start with
+  [../README.md](/home/const/solashare/README.md) and
+  [13-dependencies-and-runtime.md](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+- understanding the repo as a whole: start with
+  [11-repository-map.md](/home/const/solashare/docs/11-repository-map.md)
+
+## Notes On Accuracy
+
+The repository is under active development. When documentation and implementation diverge:
+
+- treat the source code as the current runtime truth
+- update the relevant docs in the same change where practical
+- explicitly call out temporary mismatches in pull requests or task summaries

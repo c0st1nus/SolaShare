@@ -1,9 +1,5 @@
-import { Elysia, t } from "elysia";
-import { z } from "zod";
-import {
-  withdrawFundsBodySchema,
-  withdrawFundsResponseSchema,
-} from "./contracts";
+import { Elysia } from "elysia";
+import type { z } from "zod";
 import { authPlugin, requireUserRole } from "../../plugins/auth";
 import {
   assetOnchainConfirmResponseSchema,
@@ -12,13 +8,18 @@ import {
   assetOnchainSetupResponseSchema,
   issuerActionParamsSchema,
   issuerAssetBodySchema,
+  issuerAssetDeleteResponseSchema,
   issuerAssetDetailSchema,
   issuerAssetDocumentBodySchema,
+  issuerAssetDocumentParamsSchema,
   issuerAssetDocumentResponseSchema,
+  issuerAssetDocumentUpdateBodySchema,
   issuerAssetListQuerySchema,
   issuerAssetListResponseSchema,
   issuerAssetResponseSchema,
   issuerAssetUpdateBodySchema,
+  issuerAssetVisibilityBodySchema,
+  issuerAssetVisibilityResponseSchema,
   issuerRevenuePostParamsSchema,
   issuerSubmitResponseSchema,
   revenueEpochBodySchema,
@@ -26,6 +27,8 @@ import {
   revenuePostResponseSchema,
   saleTermsBodySchema,
   saleTermsResponseSchema,
+  withdrawFundsBodySchema,
+  withdrawFundsResponseSchema,
 } from "./contracts";
 import { issuerService } from "./service";
 
@@ -34,10 +37,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .get(
     "/assets",
     ({ auth, query }) =>
-      issuerService.listOwnedAssets(
-        requireUserRole(auth, ["investor", "issuer", "admin"]),
-        query,
-      ),
+      issuerService.listOwnedAssets(requireUserRole(auth, ["investor", "issuer", "admin"]), query),
     {
       query: issuerAssetListQuerySchema,
       detail: {
@@ -51,10 +51,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
   .post(
     "/assets",
     ({ auth, body }) =>
-      issuerService.createAssetDraft(
-        requireUserRole(auth, ["investor", "issuer", "admin"]),
-        body,
-      ),
+      issuerService.createAssetDraft(requireUserRole(auth, ["investor", "issuer", "admin"]), body),
     {
       body: issuerAssetBodySchema,
       detail: {
@@ -102,6 +99,39 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
     },
   )
   .post(
+    "/assets/:id/visibility",
+    ({ auth, params, body }) =>
+      issuerService.updateAssetVisibility(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+        body,
+      ),
+    {
+      params: issuerActionParamsSchema,
+      body: issuerAssetVisibilityBodySchema,
+      detail: {
+        summary: "Update public visibility for an issuer-owned asset",
+      },
+      response: {
+        200: issuerAssetVisibilityResponseSchema,
+      },
+    },
+  )
+  .delete(
+    "/assets/:id",
+    ({ auth, params }) =>
+      issuerService.deleteAsset(requireUserRole(auth, ["investor", "issuer", "admin"]), params.id),
+    {
+      params: issuerActionParamsSchema,
+      detail: {
+        summary: "Delete an issuer-owned asset when it has no blocking activity",
+      },
+      response: {
+        200: issuerAssetDeleteResponseSchema,
+      },
+    },
+  )
+  .post(
     "/assets/:id/documents",
     ({ auth, params, body }) =>
       issuerService.registerAssetDocument(
@@ -114,6 +144,44 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
       body: issuerAssetDocumentBodySchema,
       detail: {
         summary: "Register a document reference for an asset",
+      },
+      response: {
+        200: issuerAssetDocumentResponseSchema,
+      },
+    },
+  )
+  .patch(
+    "/assets/:id/documents/:documentId",
+    ({ auth, params, body }) =>
+      issuerService.updateAssetDocument(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+        params.documentId,
+        body,
+      ),
+    {
+      params: issuerAssetDocumentParamsSchema,
+      body: issuerAssetDocumentUpdateBodySchema,
+      detail: {
+        summary: "Update an asset document owned by the issuer",
+      },
+      response: {
+        200: issuerAssetDocumentResponseSchema,
+      },
+    },
+  )
+  .delete(
+    "/assets/:id/documents/:documentId",
+    ({ auth, params }) =>
+      issuerService.deleteAssetDocument(
+        requireUserRole(auth, ["investor", "issuer", "admin"]),
+        params.id,
+        params.documentId,
+      ),
+    {
+      params: issuerAssetDocumentParamsSchema,
+      detail: {
+        summary: "Delete an asset document owned by the issuer",
       },
       response: {
         200: issuerAssetDocumentResponseSchema,
@@ -187,8 +255,7 @@ export const issuerRoutes = new Elysia({ prefix: "/issuer", tags: ["Issuer"] })
       params: issuerActionParamsSchema,
       body: assetOnchainSetupConfirmBodySchema,
       detail: {
-        summary:
-          "Confirm on-chain asset initialization and persist derived pubkeys",
+        summary: "Confirm on-chain asset initialization and persist derived pubkeys",
       },
       response: {
         200: assetOnchainConfirmResponseSchema,

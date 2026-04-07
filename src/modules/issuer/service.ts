@@ -8,8 +8,12 @@ import {
   assetStatusHistory,
   assets,
   auditLogs,
+  claims,
+  holdingsSnapshots,
+  investments,
   revenueEpochs,
   shareMints,
+  transfersIndex,
   users,
   verificationDecisions,
   verificationRequests,
@@ -34,14 +38,18 @@ import type {
   assetOnchainSetupConfirmBodySchema,
   assetOnchainSetupResponseSchema,
   issuerAssetBodySchema,
+  issuerAssetDeleteResponseSchema,
   issuerAssetDetailSchema,
   issuerAssetDocumentBodySchema,
   issuerAssetDocumentResponseSchema,
+  issuerAssetDocumentUpdateBodySchema,
   issuerAssetListQuerySchema,
   issuerAssetListResponseSchema,
   issuerAssetResponseSchema,
   issuerAssetReviewFeedbackSchema,
   issuerAssetUpdateBodySchema,
+  issuerAssetVisibilityBodySchema,
+  issuerAssetVisibilityResponseSchema,
   issuerSubmitResponseSchema,
   revenueEpochBodySchema,
   revenueEpochResponseSchema,
@@ -57,11 +65,15 @@ type IssuerAssetListQuery = z.infer<typeof issuerAssetListQuerySchema>;
 type IssuerAssetListResponse = z.infer<typeof issuerAssetListResponseSchema>;
 type IssuerAssetDetailResponse = z.infer<typeof issuerAssetDetailSchema>;
 type IssuerAssetDocumentBody = z.infer<typeof issuerAssetDocumentBodySchema>;
+type IssuerAssetDocumentUpdateBody = z.infer<typeof issuerAssetDocumentUpdateBodySchema>;
 type IssuerAssetDocumentResponse = z.infer<typeof issuerAssetDocumentResponseSchema>;
 type IssuerAssetReviewFeedback = z.infer<typeof issuerAssetReviewFeedbackSchema>;
 type SaleTermsBody = z.infer<typeof saleTermsBodySchema>;
 type SaleTermsResponse = z.infer<typeof saleTermsResponseSchema>;
 type IssuerSubmitResponse = z.infer<typeof issuerSubmitResponseSchema>;
+type IssuerAssetVisibilityBody = z.infer<typeof issuerAssetVisibilityBodySchema>;
+type IssuerAssetVisibilityResponse = z.infer<typeof issuerAssetVisibilityResponseSchema>;
+type IssuerAssetDeleteResponse = z.infer<typeof issuerAssetDeleteResponseSchema>;
 type RevenueEpochBody = z.infer<typeof revenueEpochBodySchema>;
 type RevenueEpochResponse = z.infer<typeof revenueEpochResponseSchema>;
 type RevenuePostResponse = z.infer<typeof revenuePostResponseSchema>;
@@ -98,14 +110,22 @@ const getOwnedAsset = async (assetId: string, issuerUserId: string) => {
   return asset;
 };
 
-const assertEditableDraft = async (assetId: string, issuerUserId: string) => {
+const MANAGEABLE_ASSET_STATUSES = [
+  "draft",
+  "pending_review",
+  "verified",
+  "active_sale",
+  "frozen",
+] as const;
+
+const assertManageableAsset = async (assetId: string, issuerUserId: string) => {
   const asset = await getOwnedAsset(assetId, issuerUserId);
 
-  if (asset.status !== "draft") {
+  if (!MANAGEABLE_ASSET_STATUSES.some((status) => status === asset.status)) {
     throw new ApiError(
       409,
       "INVALID_ASSET_STATE",
-      "Asset can only be modified while in draft status",
+      "Asset cannot be modified in its current status",
     );
   }
 
@@ -244,7 +264,7 @@ export class IssuerService {
     assetId: string,
     input: IssuerAssetUpdateBody,
   ): Promise<IssuerAssetResponse> {
-    const asset = await assertEditableDraft(assetId, currentUser.id);
+    const asset = await assertManageableAsset(assetId, currentUser.id);
     const nextTitle = input.title ?? asset.title;
 
     await db.transaction(async (tx) => {
@@ -284,7 +304,114 @@ export class IssuerService {
 
     return {
       asset_id: assetId,
-      status: "draft",
+      status: asset.status,
+    };
+  }
+
+  async updateAssetVisibility(
+    currentUser: IssuerActor,
+    assetId: string,
+    input: IssuerAssetVisibilityBody,
+  ): Promise<IssuerAssetVisibilityResponse> {
+    const asset = await assertManageableAsset(assetId, currentUser.id);
+
+    await db
+      .update(assets)
+      .set({
+        isPubliclyVisible: input.is_publicly_visible,
+        updatedAt: new Date(),
+      })
+      .where(eq(assets.id, assetId));
+
+    await db.insert(auditLogs).values({
+      actorUserId: currentUser.id,
+      entityType: "asset",
+      entityId: assetId,
+      action: input.is_publicly_visible ? "asset.visibility_enabled" : "asset.visibility_disabled",
+      payloadJson: {
+        previous_status: asset.status,
+        is_publicly_visible: input.is_publicly_visible,
+      },
+    });
+
+    return {
+      success: true,
+      asset_id: assetId,
+      is_publicly_visible: input.is_publicly_visible,
+    };
+  }
+
+  async deleteAsset(currentUser: IssuerActor, assetId: string): Promise<IssuerAssetDeleteResponse> {
+    const asset = await getOwnedAsset(assetId, currentUser.id);
+    const [
+      investmentTotals,
+      holdingsTotals,
+      revenueTotals,
+      claimsTotals,
+      shareMintTotals,
+      transferTotals,
+    ] = await Promise.all([
+      db
+        .select({ total: count(investments.id) })
+        .from(investments)
+        .where(eq(investments.assetId, assetId)),
+      db
+        .select({ total: count(holdingsSnapshots.id) })
+        .from(holdingsSnapshots)
+        .where(eq(holdingsSnapshots.assetId, assetId)),
+      db
+        .select({ total: count(revenueEpochs.id) })
+        .from(revenueEpochs)
+        .where(eq(revenueEpochs.assetId, assetId)),
+      db
+        .select({ total: count(claims.id) })
+        .from(claims)
+        .where(eq(claims.assetId, assetId)),
+      db
+        .select({ total: count(shareMints.id) })
+        .from(shareMints)
+        .where(eq(shareMints.assetId, assetId)),
+      db
+        .select({ total: count(transfersIndex.id) })
+        .from(transfersIndex)
+        .where(eq(transfersIndex.assetId, assetId)),
+    ]);
+
+    const hasBlockingActivity =
+      (investmentTotals[0]?.total ?? 0) > 0 ||
+      (holdingsTotals[0]?.total ?? 0) > 0 ||
+      (revenueTotals[0]?.total ?? 0) > 0 ||
+      (claimsTotals[0]?.total ?? 0) > 0 ||
+      (shareMintTotals[0]?.total ?? 0) > 0 ||
+      (transferTotals[0]?.total ?? 0) > 0 ||
+      Boolean(asset.onchainAssetPubkey || asset.shareMintPubkey || asset.vaultPubkey);
+
+    if (hasBlockingActivity) {
+      throw new ApiError(
+        409,
+        "ASSET_DELETE_BLOCKED",
+        "Asset cannot be deleted after investment, revenue, claim, transfer, or on-chain activity",
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "asset",
+        entityId: assetId,
+        action: "asset.deleted",
+        payloadJson: {
+          status: asset.status,
+          is_publicly_visible: asset.isPubliclyVisible,
+        },
+      });
+
+      await tx.delete(assets).where(eq(assets.id, assetId));
+    });
+
+    return {
+      success: true,
+      asset_id: assetId,
     };
   }
 
@@ -328,6 +455,7 @@ export class IssuerService {
         price_per_share_usdc: row.saleTerms ? toNumber(row.saleTerms.pricePerShareUsdc) : null,
         valuation_usdc: row.saleTerms ? toNumber(row.saleTerms.valuationUsdc) : null,
         total_shares: row.saleTerms?.totalShares ?? null,
+        is_publicly_visible: row.asset.isPubliclyVisible,
         created_at: row.asset.createdAt.toISOString(),
         updated_at: row.asset.updatedAt.toISOString(),
       })),
@@ -388,6 +516,7 @@ export class IssuerService {
         resolved.asset.expectedAnnualYieldPercent === null
           ? null
           : toNumber(resolved.asset.expectedAnnualYieldPercent),
+      is_publicly_visible: resolved.asset.isPubliclyVisible,
       cover_image_url: resolved.asset.coverImageUrl,
       issuer: {
         id: resolved.issuer.id,
@@ -432,7 +561,7 @@ export class IssuerService {
     assetId: string,
     input: IssuerAssetDocumentBody,
   ): Promise<IssuerAssetDocumentResponse> {
-    await assertEditableDraft(assetId, currentUser.id);
+    await assertManageableAsset(assetId, currentUser.id);
 
     const documentId = crypto.randomUUID();
 
@@ -468,12 +597,118 @@ export class IssuerService {
     };
   }
 
+  async updateAssetDocument(
+    currentUser: IssuerActor,
+    assetId: string,
+    documentId: string,
+    input: IssuerAssetDocumentUpdateBody,
+  ): Promise<IssuerAssetDocumentResponse> {
+    await assertManageableAsset(assetId, currentUser.id);
+
+    const [document] = await db
+      .select()
+      .from(assetDocuments)
+      .where(and(eq(assetDocuments.id, documentId), eq(assetDocuments.assetId, assetId)))
+      .limit(1);
+
+    if (!document) {
+      throw new ApiError(404, "ASSET_DOCUMENT_NOT_FOUND", "Asset document not found");
+    }
+
+    if (Object.keys(input).length === 0) {
+      throw new ApiError(
+        400,
+        "EMPTY_DOCUMENT_UPDATE",
+        "Provide at least one document field to update",
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(assetDocuments)
+        .set({
+          ...(input.type ? { type: input.type } : {}),
+          ...(input.title ? { title: input.title } : {}),
+          ...(input.storage_provider ? { storageProvider: input.storage_provider } : {}),
+          ...(input.storage_uri ? { storageUri: input.storage_uri } : {}),
+          ...(input.content_hash ? { contentHash: input.content_hash } : {}),
+          ...(input.mime_type !== undefined ? { mimeType: input.mime_type ?? null } : {}),
+          ...(input.is_public !== undefined ? { isPublic: input.is_public } : {}),
+        })
+        .where(eq(assetDocuments.id, documentId));
+
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "asset_document",
+        entityId: documentId,
+        action: "asset.document_updated",
+        payloadJson: {
+          asset_id: assetId,
+          updated_fields: Object.keys(input),
+        },
+      });
+    });
+
+    return {
+      document_id: documentId,
+      success: true,
+    };
+  }
+
+  async deleteAssetDocument(
+    currentUser: IssuerActor,
+    assetId: string,
+    documentId: string,
+  ): Promise<IssuerAssetDocumentResponse> {
+    await assertManageableAsset(assetId, currentUser.id);
+
+    const [document] = await db
+      .select()
+      .from(assetDocuments)
+      .where(and(eq(assetDocuments.id, documentId), eq(assetDocuments.assetId, assetId)))
+      .limit(1);
+
+    if (!document) {
+      throw new ApiError(404, "ASSET_DOCUMENT_NOT_FOUND", "Asset document not found");
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.insert(auditLogs).values({
+        actorUserId: currentUser.id,
+        entityType: "asset_document",
+        entityId: documentId,
+        action: "asset.document_deleted",
+        payloadJson: {
+          asset_id: assetId,
+          title: document.title,
+          type: document.type,
+        },
+      });
+
+      await tx.delete(assetDocuments).where(eq(assetDocuments.id, documentId));
+    });
+
+    return {
+      document_id: documentId,
+      success: true,
+    };
+  }
+
   async saveSaleTerms(
     currentUser: IssuerActor,
     assetId: string,
     input: SaleTermsBody,
   ): Promise<SaleTermsResponse> {
-    const asset = await assertEditableDraft(assetId, currentUser.id);
+    const asset = await getOwnedAsset(assetId, currentUser.id);
+
+    if (asset.status !== "draft") {
+      throw new ApiError(
+        409,
+        "INVALID_ASSET_STATE",
+        "Sale terms can only be modified while the asset is in draft status",
+      );
+    }
+
     const [existingSaleTerms] = await db
       .select()
       .from(assetSaleTerms)

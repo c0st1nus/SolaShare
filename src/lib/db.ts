@@ -3,7 +3,10 @@ import postgres from "postgres";
 import { env } from "../config/env";
 import * as schema from "../db/schema";
 
-export const client = postgres(env.DATABASE_URL, {
+const databaseUrl =
+  env.NODE_ENV === "test" && env.TEST_DATABASE_URL ? env.TEST_DATABASE_URL : env.DATABASE_URL;
+
+export const client = postgres(databaseUrl, {
   max: 10,
   idle_timeout: 20,
   connect_timeout: 10,

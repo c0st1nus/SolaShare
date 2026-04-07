@@ -11,6 +11,7 @@ import {
 } from "../db/schema";
 import { ApiError } from "../lib/api-error";
 import { assetsService } from "../modules/assets/service";
+import { issuerService } from "../modules/issuer/service";
 import { createActiveSaleAsset, createUser, resetTestState } from "./helpers";
 
 describe("assets integration", () => {
@@ -181,5 +182,37 @@ describe("assets integration", () => {
     expect(holdersSummary.total_claimed_usdc).toBe(12);
     expect(holdersSummary.funded_percent).toBe(2);
     expect(saleTerms.totalShares).toBe(10000);
+  });
+
+  it("hides an active sale asset when the issuer disables marketplace visibility", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-assets-visibility-toggle",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "admin-assets-visibility-toggle",
+    });
+    const { asset } = await createActiveSaleAsset(issuer, admin);
+
+    const beforeHide = await assetsService.listAssets({
+      page: 1,
+      limit: 20,
+      sort: "newest",
+    });
+    expect(beforeHide.items.some((item) => item.id === asset.id)).toBe(true);
+
+    await issuerService.updateAssetVisibility(issuer, asset.id, {
+      is_publicly_visible: false,
+    });
+
+    const afterHide = await assetsService.listAssets({
+      page: 1,
+      limit: 20,
+      sort: "newest",
+    });
+
+    expect(afterHide.items.some((item) => item.id === asset.id)).toBe(false);
+    await expect(assetsService.getAsset(asset.id)).rejects.toThrow(ApiError);
   });
 });

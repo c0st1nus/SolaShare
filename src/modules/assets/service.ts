@@ -42,7 +42,13 @@ const getPublicAssetBase = async (assetId: string) => {
     .from(assets)
     .innerJoin(users, eq(users.id, assets.issuerUserId))
     .innerJoin(assetSaleTerms, eq(assetSaleTerms.assetId, assets.id))
-    .where(and(eq(assets.id, assetId), inArray(assets.status, publicAssetStatuses)))
+    .where(
+      and(
+        eq(assets.id, assetId),
+        eq(assets.isPubliclyVisible, true),
+        inArray(assets.status, publicAssetStatuses),
+      ),
+    )
     .limit(1);
 
   if (!row) {
@@ -59,6 +65,7 @@ export class AssetsService {
       publicAssetStatuses.includes(query.status as (typeof publicAssetStatuses)[number])
         ? eq(assets.status, query.status)
         : inArray(assets.status, publicAssetStatuses),
+      eq(assets.isPubliclyVisible, true),
       query.energy_type ? eq(assets.energyType, query.energy_type) : undefined,
     ].filter(Boolean);
 

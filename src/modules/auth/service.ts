@@ -11,10 +11,7 @@ import {
   walletBindings,
 } from "../../db/schema";
 import { ApiError } from "../../lib/api-error";
-import {
-  generateWalletChallenge,
-  verifyWalletSignature,
-} from "../../lib/solana";
+import { generateWalletChallenge, verifyWalletSignature } from "../../lib/solana";
 import { fundTestWalletInLocalnet } from "../../lib/solana/faucet";
 import type {
   authMeResponseSchema,
@@ -56,9 +53,7 @@ type GoogleAuthBody = z.infer<typeof googleAuthBodySchema>;
 type GoogleAuthUrlQuery = z.infer<typeof googleAuthUrlQuerySchema>;
 type PasswordLinkBody = z.infer<typeof passwordLinkBodySchema>;
 type PasswordLinkResponse = z.infer<typeof passwordLinkResponseSchema>;
-type TelegramAuthPreviewResponse = z.infer<
-  typeof telegramAuthPreviewResponseSchema
->;
+type TelegramAuthPreviewResponse = z.infer<typeof telegramAuthPreviewResponseSchema>;
 type TelegramLoginBody = z.infer<typeof telegramLoginBodySchema>;
 type TelegramMiniAppBody = z.infer<typeof telegramMiniAppBodySchema>;
 type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
@@ -66,9 +61,7 @@ type AuthMeResponse = z.infer<typeof authMeResponseSchema>;
 type GoogleAuthUrlResponse = z.infer<typeof googleAuthUrlResponseSchema>;
 type WalletLinkBody = z.infer<typeof walletLinkBodySchema>;
 type WalletLinkResponse = z.infer<typeof walletLinkResponseSchema>;
-type WalletChallengeRequestBody = z.infer<
-  typeof walletChallengeRequestBodySchema
->;
+type WalletChallengeRequestBody = z.infer<typeof walletChallengeRequestBodySchema>;
 type WalletChallengeResponse = z.infer<typeof walletChallengeResponseSchema>;
 type WalletVerifyBody = z.infer<typeof walletVerifyBodySchema>;
 type WalletVerifyResponse = z.infer<typeof walletVerifyResponseSchema>;
@@ -90,10 +83,7 @@ type GoogleIdentity = {
 };
 
 type GoogleAuthClient = {
-  exchangeCode(input: {
-    code: string;
-    redirectUri: string;
-  }): Promise<GoogleIdentity>;
+  exchangeCode(input: { code: string; redirectUri: string }): Promise<GoogleIdentity>;
 };
 
 type AuthenticatedUser = {
@@ -102,8 +92,7 @@ type AuthenticatedUser = {
 
 type AuthProvider = "password" | "google" | "telegram";
 
-const nowPlusSeconds = (seconds: number) =>
-  new Date(Date.now() + seconds * 1000);
+const nowPlusSeconds = (seconds: number) => new Date(Date.now() + seconds * 1000);
 const nowPlusDays = (days: number) => nowPlusSeconds(days * 24 * 60 * 60);
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -172,21 +161,14 @@ const defaultGoogleAuthClient: GoogleAuthClient = {
       );
     }
 
-    const profileResponse = await fetch(
-      "https://openidconnect.googleapis.com/v1/userinfo",
-      {
-        headers: {
-          authorization: `Bearer ${tokenPayload.access_token}`,
-        },
+    const profileResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+      headers: {
+        authorization: `Bearer ${tokenPayload.access_token}`,
       },
-    );
+    });
 
     if (!profileResponse.ok) {
-      throw new ApiError(
-        401,
-        "GOOGLE_PROFILE_FETCH_FAILED",
-        "Failed to load Google profile",
-      );
+      throw new ApiError(401, "GOOGLE_PROFILE_FETCH_FAILED", "Failed to load Google profile");
     }
 
     const profile = (await profileResponse.json()) as {
@@ -197,11 +179,7 @@ const defaultGoogleAuthClient: GoogleAuthClient = {
     };
 
     if (!profile.sub || !profile.email) {
-      throw new ApiError(
-        401,
-        "GOOGLE_PROFILE_INVALID",
-        "Google profile response is incomplete",
-      );
+      throw new ApiError(401, "GOOGLE_PROFILE_INVALID", "Google profile response is incomplete");
     }
 
     return {
@@ -228,22 +206,14 @@ export class AuthService {
   }
 
   private async getAuthUser(userId: string) {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
     if (!user) {
       throw new ApiError(401, "UNAUTHORIZED", "Authentication required");
     }
 
     if (user.status !== "active") {
-      throw new ApiError(
-        403,
-        "FORBIDDEN",
-        "User is not allowed to access this resource",
-      );
+      throw new ApiError(403, "FORBIDDEN", "User is not allowed to access this resource");
     }
 
     const providerRows = await db
@@ -275,12 +245,7 @@ export class AuthService {
     const [identity] = await db
       .select()
       .from(authIdentities)
-      .where(
-        and(
-          eq(authIdentities.userId, userId),
-          eq(authIdentities.provider, "password"),
-        ),
-      )
+      .where(and(eq(authIdentities.userId, userId), eq(authIdentities.provider, "password")))
       .limit(1);
 
     return identity ?? null;
@@ -331,25 +296,13 @@ export class AuthService {
       .limit(1);
 
     if (!session) {
-      throw new ApiError(
-        401,
-        "INVALID_REFRESH_TOKEN",
-        "Refresh token is invalid or expired",
-      );
+      throw new ApiError(401, "INVALID_REFRESH_TOKEN", "Refresh token is invalid or expired");
     }
 
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, session.userId))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
 
     if (!user || user.status !== "active") {
-      throw new ApiError(
-        401,
-        "UNAUTHORIZED",
-        "Refresh token user is not active",
-      );
+      throw new ApiError(401, "UNAUTHORIZED", "Refresh token user is not active");
     }
 
     return {
@@ -450,10 +403,7 @@ export class AuthService {
       .select()
       .from(authIdentities)
       .where(
-        and(
-          eq(authIdentities.provider, "google"),
-          eq(authIdentities.providerUserId, identity.sub),
-        ),
+        and(eq(authIdentities.provider, "google"), eq(authIdentities.providerUserId, identity.sub)),
       )
       .limit(1);
 
@@ -507,11 +457,7 @@ export class AuthService {
         .limit(1);
 
       if (!user) {
-        throw new ApiError(
-          404,
-          "USER_NOT_FOUND",
-          "Linked Google user was not found",
-        );
+        throw new ApiError(404, "USER_NOT_FOUND", "Linked Google user was not found");
       }
 
       return user;
@@ -553,11 +499,7 @@ export class AuthService {
       .limit(1);
 
     if (existingIdentity) {
-      throw new ApiError(
-        409,
-        "EMAIL_ALREADY_REGISTERED",
-        "Email address is already registered",
-      );
+      throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "Email address is already registered");
     }
 
     const passwordHash = await Bun.password.hash(input.password, {
@@ -613,20 +555,11 @@ export class AuthService {
     const [identity] = await db
       .select()
       .from(authIdentities)
-      .where(
-        and(
-          eq(authIdentities.provider, "password"),
-          eq(authIdentities.providerUserId, email),
-        ),
-      )
+      .where(and(eq(authIdentities.provider, "password"), eq(authIdentities.providerUserId, email)))
       .limit(1);
 
     if (!identity) {
-      throw new ApiError(
-        401,
-        "INVALID_CREDENTIALS",
-        "Invalid email or password",
-      );
+      throw new ApiError(401, "INVALID_CREDENTIALS", "Invalid email or password");
     }
 
     const [credential] = await db
@@ -636,24 +569,13 @@ export class AuthService {
       .limit(1);
 
     if (!credential) {
-      throw new ApiError(
-        401,
-        "INVALID_CREDENTIALS",
-        "Invalid email or password",
-      );
+      throw new ApiError(401, "INVALID_CREDENTIALS", "Invalid email or password");
     }
 
-    const isValidPassword = await Bun.password.verify(
-      input.password,
-      credential.passwordHash,
-    );
+    const isValidPassword = await Bun.password.verify(input.password, credential.passwordHash);
 
     if (!isValidPassword) {
-      throw new ApiError(
-        401,
-        "INVALID_CREDENTIALS",
-        "Invalid email or password",
-      );
+      throw new ApiError(401, "INVALID_CREDENTIALS", "Invalid email or password");
     }
 
     await db.insert(auditLogs).values({
@@ -674,9 +596,7 @@ export class AuthService {
     jwt: JwtSigner,
     context: SessionContext = {},
   ): Promise<AuthSessionResponse> {
-    const { session, user } = await this.resolveUserBySessionToken(
-      input.refresh_token,
-    );
+    const { session, user } = await this.resolveUserBySessionToken(input.refresh_token);
 
     await db
       .update(userSessions)
@@ -699,9 +619,7 @@ export class AuthService {
   }
 
   async logout(input: LogoutBody): Promise<{ success: true }> {
-    const { session, user } = await this.resolveUserBySessionToken(
-      input.refresh_token,
-    );
+    const { session, user } = await this.resolveUserBySessionToken(input.refresh_token);
 
     await db
       .update(userSessions)
@@ -732,9 +650,7 @@ export class AuthService {
     };
   }
 
-  async getGoogleAuthorizationUrl(
-    query: GoogleAuthUrlQuery,
-  ): Promise<GoogleAuthUrlResponse> {
+  async getGoogleAuthorizationUrl(query: GoogleAuthUrlQuery): Promise<GoogleAuthUrlResponse> {
     if (!env.GOOGLE_CLIENT_ID) {
       throw new ApiError(
         500,
@@ -762,9 +678,7 @@ export class AuthService {
     };
   }
 
-  async previewTelegramAuth(
-    input: TelegramMiniAppBody,
-  ): Promise<TelegramAuthPreviewResponse> {
+  async previewTelegramAuth(input: TelegramMiniAppBody): Promise<TelegramAuthPreviewResponse> {
     validateTelegramMiniAppData(input.telegram_init_data);
 
     const parsedIdentity = parseTelegramMiniAppData(input.telegram_init_data);
@@ -913,21 +827,12 @@ export class AuthService {
       .limit(1);
 
     if (emailIdentity && emailIdentity.userId !== currentUser.id) {
-      throw new ApiError(
-        409,
-        "EMAIL_ALREADY_REGISTERED",
-        "Email address is already registered",
-      );
+      throw new ApiError(409, "EMAIL_ALREADY_REGISTERED", "Email address is already registered");
     }
 
-    const existingPasswordIdentity = await this.getPasswordIdentity(
-      currentUser.id,
-    );
+    const existingPasswordIdentity = await this.getPasswordIdentity(currentUser.id);
 
-    if (
-      existingPasswordIdentity?.email &&
-      existingPasswordIdentity.email !== email
-    ) {
+    if (existingPasswordIdentity?.email && existingPasswordIdentity.email !== email) {
       throw new ApiError(
         409,
         "PASSWORD_LOGIN_ALREADY_ENABLED",
@@ -996,10 +901,7 @@ export class AuthService {
       .where(eq(walletBindings.walletAddress, input.wallet_address))
       .limit(1);
 
-    if (
-      existingWalletBinding &&
-      existingWalletBinding.userId !== currentUser.id
-    ) {
+    if (existingWalletBinding && existingWalletBinding.userId !== currentUser.id) {
       throw new ApiError(
         409,
         "WALLET_ALREADY_LINKED",
@@ -1059,10 +961,7 @@ export class AuthService {
     currentUser: AuthenticatedUser,
     input: WalletChallengeRequestBody,
   ): Promise<WalletChallengeResponse> {
-    const challenge = await generateWalletChallenge(
-      input.wallet_address,
-      "wallet_binding",
-    );
+    const challenge = await generateWalletChallenge(input.wallet_address, "wallet_binding");
 
     await db.insert(auditLogs).values({
       actorUserId: currentUser.id,

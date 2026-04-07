@@ -1,10 +1,7 @@
 import { z } from "zod";
 
 export const withdrawFundsBodySchema = z.object({
-  amount_usdc: z
-    .number()
-    .min(10)
-    .describe("Amount in USDC to withdraw (minimum 10)"),
+  amount_usdc: z.number().min(10).describe("Amount in USDC to withdraw (minimum 10)"),
 });
 
 export const withdrawFundsResponseSchema = z.object({
@@ -19,6 +16,7 @@ export const withdrawFundsResponseSchema = z.object({
     amount_usdc: z.number(),
   }),
 });
+
 import {
   idParamSchema,
   isoDateTimeSchema,
@@ -52,7 +50,7 @@ export const issuerAssetBodySchema = z.object({
 
 export const issuerAssetResponseSchema = z.object({
   asset_id: uuidSchema,
-  status: z.literal("draft"),
+  status: assetStatusSchema,
 });
 
 export const issuerAssetUpdateBodySchema = issuerAssetBodySchema.partial();
@@ -71,9 +69,24 @@ export const issuerAssetDocumentBodySchema = z.object({
   is_public: z.boolean().default(false),
 });
 
+export const issuerAssetDocumentUpdateBodySchema = issuerAssetDocumentBodySchema.partial();
+
 export const issuerAssetDocumentResponseSchema = z.object({
   document_id: uuidSchema,
   success: z.literal(true),
+});
+
+export const issuerAssetVisibilityBodySchema = z.object({
+  is_publicly_visible: z.boolean(),
+});
+
+export const issuerAssetVisibilityResponseSchema = successResponseSchema.extend({
+  asset_id: uuidSchema,
+  is_publicly_visible: z.boolean(),
+});
+
+export const issuerAssetDeleteResponseSchema = successResponseSchema.extend({
+  asset_id: uuidSchema,
 });
 
 export const saleTermsBodySchema = z.object({
@@ -117,6 +130,10 @@ export const assetOnchainSetupConfirmBodySchema = z.object({
 });
 
 export const issuerActionParamsSchema = idParamSchema;
+export const issuerAssetDocumentParamsSchema = z.object({
+  id: uuidSchema,
+  documentId: uuidSchema,
+});
 
 export const issuerAssetListItemSchema = z.object({
   id: uuidSchema,
@@ -130,6 +147,7 @@ export const issuerAssetListItemSchema = z.object({
   price_per_share_usdc: z.number().nullable(),
   valuation_usdc: z.number().nullable(),
   total_shares: z.number().int().positive().nullable(),
+  is_publicly_visible: z.boolean(),
   created_at: isoDateTimeSchema,
   updated_at: isoDateTimeSchema,
 });
@@ -171,6 +189,7 @@ export const issuerAssetDetailSchema = z.object({
   capacity_kw: z.number(),
   currency: z.string(),
   expected_annual_yield_percent: z.number().nullable(),
+  is_publicly_visible: z.boolean(),
   cover_image_url: z.string().url().nullable(),
   issuer: z.object({
     id: uuidSchema,
@@ -192,13 +211,7 @@ export const issuerAssetDetailSchema = z.object({
       price_per_share_usdc: numericStringSchema,
       minimum_buy_amount_usdc: numericStringSchema,
       target_raise_usdc: numericStringSchema,
-      sale_status: z.enum([
-        "draft",
-        "scheduled",
-        "live",
-        "completed",
-        "cancelled",
-      ]),
+      sale_status: z.enum(["draft", "scheduled", "live", "completed", "cancelled"]),
     })
     .nullable(),
   documents: z.array(

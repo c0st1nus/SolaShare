@@ -21,6 +21,25 @@ import { adminService } from "../modules/admin/service";
 import { issuerService } from "../modules/issuer/service";
 
 export const resetTestState = async () => {
+  if (!env.TEST_DATABASE_URL) {
+    throw new Error(
+      "TEST_DATABASE_URL is required for tests. Refusing to truncate the development database.",
+    );
+  }
+
+  if (env.NODE_ENV !== "test") {
+    throw new Error("resetTestState can only run when NODE_ENV=test.");
+  }
+
+  const activeDatabaseUrl = env.TEST_DATABASE_URL;
+  const databaseName = new URL(activeDatabaseUrl).pathname.replace(/^\//, "");
+
+  if (!databaseName.includes("test")) {
+    throw new Error(
+      `Refusing to reset non-test database "${databaseName}". Set TEST_DATABASE_URL to a dedicated test database.`,
+    );
+  }
+
   if (!env.SOLANA_USDC_MINT_ADDRESS) {
     Object.assign(env, {
       SOLANA_USDC_MINT_ADDRESS: Keypair.generate().publicKey.toBase58(),

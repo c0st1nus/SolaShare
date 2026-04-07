@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import {
+  assetDocuments,
   assetSaleTerms,
   assetStatusHistory,
   assets,
@@ -187,6 +188,64 @@ describe("issuer and admin integration", () => {
     expect(details.review_feedback?.outcome).toBe("needs_changes");
     expect(details.review_feedback?.issues[0]?.field).toBe("valuation_usdc");
     expect(details.review_feedback?.issues[0]?.document_type).toBe("technical_passport");
+  });
+
+  it("lets an issuer update visibility and manage asset documents after activation", async () => {
+    const issuer = await createUser({
+      role: "issuer",
+      telegramUserId: "issuer-visibility-docs",
+    });
+    const admin = await createUser({
+      role: "admin",
+      telegramUserId: "admin-visibility-docs",
+    });
+    const createdAsset = await createAssetDraftFixture(issuer);
+
+    await issuerService.submitAssetForWorkflow(issuer, createdAsset.asset_id);
+    await adminService.verifyAsset(admin, createdAsset.asset_id, {
+      outcome: "approved",
+      reason: "Approved",
+      issues: [],
+    });
+    await issuerService.submitAssetForWorkflow(issuer, createdAsset.asset_id);
+
+    const detailsBefore = await issuerService.getOwnedAssetDetails(issuer, createdAsset.asset_id);
+    const documentId = detailsBefore.documents[0]?.id;
+
+    if (!documentId) {
+      throw new Error("Expected a document to exist on the fixture asset");
+    }
+
+    const visibilityResult = await issuerService.updateAssetVisibility(
+      issuer,
+      createdAsset.asset_id,
+      {
+        is_publicly_visible: false,
+      },
+    );
+    expect(visibilityResult.is_publicly_visible).toBe(false);
+
+    await issuerService.updateAssetDocument(issuer, createdAsset.asset_id, documentId, {
+      title: "Updated technical passport",
+      is_public: false,
+      storage_uri: "https://example.com/documents/updated-passport.pdf",
+      content_hash: "sha256:updated-passport",
+    });
+
+    const updatedDetails = await issuerService.getOwnedAssetDetails(issuer, createdAsset.asset_id);
+    const updatedDocument = updatedDetails.documents.find((document) => document.id === documentId);
+    expect(updatedDetails.is_publicly_visible).toBe(false);
+    expect(updatedDocument?.title).toBe("Updated technical passport");
+    expect(updatedDocument?.is_public).toBe(false);
+
+    await issuerService.deleteAssetDocument(issuer, createdAsset.asset_id, documentId);
+
+    const remainingDocuments = await db
+      .select()
+      .from(assetDocuments)
+      .where(eq(assetDocuments.id, documentId));
+
+    expect(remainingDocuments).toHaveLength(0);
   });
 
   it("freezes and closes an asset with audit history", async () => {

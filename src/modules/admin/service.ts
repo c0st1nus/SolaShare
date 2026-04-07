@@ -64,6 +64,7 @@ type AuditLogsQuery = z.infer<typeof auditLogsQuerySchema>;
 type AuditLogsResponse = z.infer<typeof auditLogsResponseSchema>;
 
 const notificationsService = new NotificationService();
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 const loadAssetOrThrow = async (assetId: string) => {
   const [asset] = await db.select().from(assets).where(eq(assets.id, assetId)).limit(1);
@@ -171,6 +172,7 @@ export class AdminService {
         resolved.asset.expectedAnnualYieldPercent === null
           ? null
           : Number(resolved.asset.expectedAnnualYieldPercent),
+      is_publicly_visible: resolved.asset.isPubliclyVisible,
       cover_image_url: resolved.asset.coverImageUrl,
       issuer: {
         id: resolved.issuer.id,
@@ -348,10 +350,12 @@ export class AdminService {
     currentUser: AdminActor,
     input: AdminCreateUserBody,
   ): Promise<AdminCreateUserResponse> {
+    const normalizedEmail = normalizeEmail(input.email);
+
     const [existingIdentity] = await db
       .select()
       .from(authIdentities)
-      .where(eq(authIdentities.email, input.email))
+      .where(eq(authIdentities.email, normalizedEmail))
       .limit(1);
 
     if (existingIdentity) {
@@ -374,10 +378,10 @@ export class AdminService {
       await tx.insert(authIdentities).values({
         userId: createdUser.id,
         provider: "password",
-        providerUserId: input.email,
-        email: input.email,
+        providerUserId: normalizedEmail,
+        email: normalizedEmail,
         profileJson: {
-          email: input.email,
+          email: normalizedEmail,
         },
       });
 
@@ -392,7 +396,7 @@ export class AdminService {
         entityId: createdUser.id,
         action: "user.created",
         payloadJson: {
-          email: input.email,
+          email: normalizedEmail,
           role: input.role,
         },
       });
