@@ -23,16 +23,16 @@ Primary responsibilities:
 - portfolio delivery
 - admin controls
 
-The backend now persists real workflow state in PostgreSQL. The remaining intentional stub layer is
-Solana transaction building and wallet signature verification, which are left in code as
-`TODO @waveofem` integration points.
+The backend persists real workflow state in PostgreSQL. Prepare endpoints return base64-encoded
+Solana VersionedTransactions for client-side wallet signing. Wallet binding uses Ed25519 signature
+verification with anti-replay protection.
 
 Frontend integration note:
 
 - this document is the human-readable API contract
 - `/openapi` is the interactive source for current route shapes
 - `/openapi/json` is the machine-readable contract for tooling or codegen
-- frontend should integrate against the contract shape, not against current stub values
+- frontend should integrate against the contract shape
 
 ---
 
@@ -45,7 +45,7 @@ Current backend status:
 - issuer, admin, investment, revenue, claim and portfolio flows persist workflow state in PostgreSQL
 - `operation_id` is returned from preparation endpoints and must be sent back to `POST /transactions/confirm`
 - auth and role checks below are enforced by the backend
-- Solana-specific signing payload assembly remains intentionally deferred
+- prepare endpoints return `serialized_tx` (base64 VersionedTransaction), `metadata`, `expires_at`, and `network`
 
 ---
 
@@ -123,15 +123,32 @@ Responses generally follow one of these shapes:
 | `POST /auth/logout` | Public | refresh-session revocation |
 | `GET /auth/google/url` | Public | build Google OAuth URL |
 | `POST /auth/google` | Public | exchange Google code |
+| `POST /auth/telegram/preview` | Public | validate Telegram Mini App init data and suggest login or registration |
 | `POST /auth/telegram` | Public | Telegram Mini App login entrypoint |
 | `POST /auth/telegram/login` | Public | Telegram Login Widget entrypoint |
 | `GET /auth/me` | Authenticated user | current auth profile |
+| `POST /auth/password/link` | Authenticated user | add email/password login to the current account |
 | `POST /auth/wallet/link` | Authenticated user | links wallet to current user |
+| `GET /admin/users` | Authenticated admin | list platform users |
+| `POST /admin/users` | Authenticated admin | create investor, issuer, or admin account |
+| `POST /admin/users/:id/role` | Authenticated admin | assign or change a user role |
+| `DELETE /admin/users/:id` | Authenticated admin | delete an unreferenced user |
+| `GET /me/profile` | Authenticated user | editable profile read model |
+| `PATCH /me/profile` | Authenticated user | update display name, bio, avatar |
+| `GET /me/kyc` | Authenticated user | current KYC workflow state |
+| `POST /me/kyc/submit` | Authenticated user | submit investor KYC for review |
+| `POST /me/kyc/cancel` | Authenticated user | cancel the latest pending KYC submission |
+| `POST /uploads/presign` | Authenticated user | create short-lived upload URL for private document uploads |
+| `PUT /uploads/direct` | Upload token holder | upload raw file bytes for a previously presigned target |
+| `GET /issuer/assets` | Authenticated issuer | list current issuer assets including drafts and review returns |
+| `GET /issuer/assets/:id` | Authenticated issuer | full issuer-owned asset detail with private docs and review feedback |
 | `POST /issuer/*` | Authenticated user | current user must own target asset |
 | `GET /me/*` | Authenticated user | current user read models |
-| `POST /investments/*` | Authenticated investor | active sale only |
+| `POST /investments/*` | Authenticated user | active sale only, `prepare` requires approved KYC and wallet binding |
 | `POST /claims/prepare` | Authenticated investor | only for claimable revenue |
 | `POST /transactions/confirm` | Authenticated user or internal flow | post-signature sync |
+| `GET /admin/assets` | Authenticated admin | list all assets for moderation and operations |
+| `POST /admin/users/:id/kyc-review` | Authenticated admin | approve or reject investor KYC |
 | `POST /admin/*` | Authenticated admin | strongly protected |
 | `GET /admin/audit-logs` | Authenticated admin | operational visibility |
 
@@ -199,6 +216,11 @@ Responses generally follow one of these shapes:
 - `rejected`
 - `needs_changes`
 
+### KYC Document Type
+
+- `passport`
+- `national_id`
+
 ### Transaction Kind
 
 - `investment`
@@ -263,7 +285,10 @@ Successful authentication endpoints return:
     "id": "uuid",
     "email": "ops@solashare.dev",
     "display_name": "Konstantin",
+    "bio": null,
+    "avatar_url": null,
     "role": "investor",
+    "kyc_status": "not_started",
     "auth_providers": ["password", "google"]
   }
 }
@@ -391,7 +416,10 @@ Access:
     "id": "uuid",
     "email": "ops@solashare.dev",
     "display_name": "Konstantin",
+    "bio": null,
+    "avatar_url": null,
     "role": "investor",
+    "kyc_status": "not_started",
     "auth_providers": ["password", "google"]
   }
 }
@@ -435,7 +463,7 @@ Access:
 ```json
 {
   "code": "4/0AdQt8qh...",
-  "redirect_uri": "https://web.solashare.test/auth/oauth/google/callback"
+  "redirect_uri": "https://web.solashare.test/auth/google/callback"
 }
 ```
 
@@ -473,6 +501,53 @@ Access:
 
 ---
 
+## POST /auth/telegram/preview
+
+Validates Telegram Mini App init data and tells the frontend whether to suggest login
+into an existing account or create a new one.
+
+Access:
+
+- public
+
+### Request
+
+```json
+{
+  "telegram_init_data": "query_id=AAE...&user=%7B...%7D&auth_date=1710000000&hash=..."
+}
+```
+
+### Response
+
+```json
+{
+  "suggested_action": "login",
+  "telegram_user": {
+    "telegram_user_id": "777000",
+    "telegram_username": "waveofem",
+    "display_name": "Konstantin",
+    "photo_url": "https://t.me/i/userpic/320/example.jpg"
+  },
+  "existing_account": {
+    "user_id": "1cfad859-e4ff-4a12-8ec9-87ff42baf4ff",
+    "display_name": "Konstantin",
+    "avatar_url": null,
+    "role": "investor",
+    "auth_providers": ["telegram", "password"]
+  }
+}
+```
+
+### Notes
+
+- use this route only when the frontend is already running inside Telegram Mini App
+- if `suggested_action` is `register`, the frontend should offer account creation through Telegram
+- if `suggested_action` is `login`, the frontend should offer sign-in into the existing account
+- the final session is still created by `POST /auth/telegram`
+
+---
+
 ## POST /auth/telegram
 
 Authenticates a user through Telegram Mini App init data.
@@ -493,6 +568,50 @@ Access:
 
 - this is the preferred auth path when the site is opened inside Telegram Mini App
 - `POST /auth/telegram/miniapp` is an alias of the same flow in the backend
+
+---
+
+## POST /auth/password/link
+
+Adds email/password authentication to the currently authenticated account. This is the
+recommended way to make a Telegram-created account accessible from a normal browser later.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "email": "investor@example.com",
+  "password": "Password123!"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": "1cfad859-e4ff-4a12-8ec9-87ff42baf4ff",
+    "email": "investor@example.com",
+    "display_name": "Investor One",
+    "bio": null,
+    "avatar_url": null,
+    "role": "investor",
+    "kyc_status": "not_started",
+    "wallet_address": null,
+    "auth_providers": ["password", "telegram"]
+  }
+}
+```
+
+### Notes
+
+- frontend should show this flow after Telegram sign-in when `password` is missing from `auth_providers`
+- if the email already belongs to another user, the backend returns `409`
 
 ---
 
@@ -527,7 +646,7 @@ Access:
 - this endpoint stores or refreshes a pending wallet binding request
 - finalize the binding with `POST /transactions/confirm` using `kind: "wallet_link"`
 - wallet linking is post-login account binding, not an authentication method
-- cryptographic wallet signature verification is still a dedicated `TODO @waveofem`
+- cryptographic wallet signature verification is implemented via `/wallet/challenge` and `/wallet/verify`
 
 ---
 
@@ -779,6 +898,28 @@ Access:
 
 ---
 
+## GET /issuer/assets
+
+Lists assets owned by the current issuer, including drafts and assets returned from review.
+
+### Response notes
+
+- includes sale-term summary when pricing exists
+- includes draft assets that are not visible in the public catalog
+
+---
+
+## GET /issuer/assets/:id
+
+Returns the full issuer-owned asset detail.
+
+### Response notes
+
+- returns all asset documents, not only public ones
+- returns latest admin review feedback when outcome is `rejected` or `needs_changes`
+
+---
+
 ## PATCH /issuer/assets/:id
 
 Updates an asset draft or editable asset fields.
@@ -816,12 +957,19 @@ Access:
 {
   "type": "technical_passport",
   "title": "Technical passport",
-  "storage_provider": "arweave",
+  "storage_provider": "s3",
   "storage_uri": "https://...",
   "content_hash": "hash",
+  "mime_type": "application/pdf",
   "is_public": true
 }
 ```
+
+Typical frontend flow:
+
+1. call `POST /uploads/presign` with `purpose: "asset_document"`
+2. upload the raw file bytes to `PUT /uploads/direct`
+3. send the returned `file_url` and `content_hash` to this endpoint
 
 ### Response
 
@@ -847,12 +995,17 @@ Access:
 ```json
 {
   "valuation_usdc": 100000,
-  "total_shares": 10000,
-  "price_per_share_usdc": 10,
-  "minimum_buy_amount_usdc": 50,
-  "target_raise_usdc": 50000
+  "minimum_buy_amount_usdc": 50
 }
 ```
+
+Optional advanced fields still supported:
+
+- `total_shares`
+- `price_per_share_usdc`
+- `target_raise_usdc`
+
+If omitted, the backend derives them from asset capacity and valuation.
 
 ### Response
 
@@ -923,6 +1076,14 @@ Access:
 }
 ```
 
+### Frontend notes
+
+- the issuer UI should upload the revenue report file through `POST /uploads/presign` first
+- `report_uri` should point to the backend-served uploaded file URL, not an external third-party link
+- `report_hash` should come from the upload completion response, not from manual input
+- initial revenue evidence may also be attached during asset creation as an `asset_document` with type `revenue_report`
+- asset creation may also send `cover_image_url`, which should point to an uploaded image stored through the same backend upload flow
+
 ---
 
 ## POST /issuer/assets/:id/revenue-epochs/:epochId/post
@@ -959,6 +1120,214 @@ May return:
 ---
 
 ## Investor Endpoints
+
+## GET /me/profile
+
+Returns the editable profile state for the authenticated user.
+
+Access:
+
+- authenticated user
+
+### Example response
+
+```json
+{
+  "user": {
+    "id": "user-uuid",
+    "email": "ops@solashare.dev",
+    "display_name": "Konstantin",
+    "bio": "Investor focused on renewable yield.",
+    "avatar_url": "https://cdn.example.com/avatar.png",
+    "role": "investor",
+    "kyc_status": "pending",
+    "auth_providers": ["password"]
+  }
+}
+```
+
+---
+
+## PATCH /me/profile
+
+Updates the editable profile state for the authenticated user.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "display_name": "Konstantin S.",
+  "bio": "Investor focused on renewable yield.",
+  "avatar_url": "https://cdn.example.com/avatar.png"
+}
+```
+
+---
+
+## GET /me/kyc
+
+Returns the current KYC workflow state for the authenticated user.
+
+Access:
+
+- authenticated user
+
+### Example response
+
+```json
+{
+  "kyc_status": "needs_changes",
+  "submitted_at": "2026-04-04T10:20:00.000Z",
+  "reviewed_at": "2026-04-04T12:10:00.000Z",
+  "decision_notes": "Please upload a clearer passport scan.",
+  "can_submit": true,
+  "current_request": {
+    "verification_request_id": "verification-request-uuid",
+    "request_status": "rejected",
+    "document_type": "passport",
+    "document_name": "passport.pdf",
+    "mime_type": "application/pdf",
+    "document_uri": "http://localhost:3000/api/v1/uploads/files/abc-passport.pdf",
+    "document_hash": "sha256:passport",
+    "notes": "Main identity document",
+    "created_at": "2026-04-04T10:20:00.000Z"
+  }
+}
+```
+
+### Frontend notes
+
+- use this endpoint to drive the dedicated KYC page
+- `can_submit` controls whether the upload form should be visible
+- `decision_notes` should be shown to the user when review requires changes or rejects the submission
+
+---
+
+## POST /uploads/presign
+
+Creates a short-lived direct-upload target for private user files.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "purpose": "asset_document",
+  "file_name": "passport.pdf",
+  "content_type": "application/pdf",
+  "size_bytes": 482331
+}
+```
+
+### Response
+
+```json
+{
+  "upload_url": "http://localhost:3000/api/v1/uploads/direct?token=...",
+  "file_url": "http://localhost:3000/api/v1/uploads/files/abc-passport.pdf",
+  "upload_method": "PUT",
+  "expires_at": "2026-04-04T10:35:00.000Z"
+}
+```
+
+### Frontend notes
+
+- supported `purpose` values include `kyc_document`, `avatar_image`, and `asset_document`
+- current file size limits are `10 MB` for `kyc_document`, `10 MB` for `avatar_image`, and `50 MB` for `asset_document`
+- upload the raw file bytes to `upload_url` using the returned HTTP method
+- after upload succeeds, pass the returned `file_url` into the corresponding document-registration endpoint
+- uploaded objects are stored in private S3-compatible storage behind the backend file route
+
+---
+
+## PUT /uploads/direct
+
+Uploads the raw file body to a previously created upload target.
+
+Access:
+
+- upload token holder
+
+### Query params
+
+- `token`
+
+### Response
+
+```json
+{
+  "success": true,
+  "file_url": "http://localhost:3000/api/v1/uploads/files/abc-passport.pdf",
+  "content_hash": "sha256:passport"
+}
+```
+
+---
+
+## POST /me/kyc/submit
+
+Creates an investor KYC review request and moves the user into `pending`.
+
+Access:
+
+- authenticated user
+
+### Request
+
+```json
+{
+  "document_type": "passport",
+  "document_name": "passport.pdf",
+  "mime_type": "application/pdf",
+  "document_uri": "https://example.com/kyc/passport.pdf",
+  "document_hash": "sha256:passport",
+  "notes": "Main identity document"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "kyc_status": "pending",
+  "verification_request_id": "verification-request-uuid"
+}
+```
+
+---
+
+## POST /me/kyc/cancel
+
+Cancels the latest pending investor KYC submission and returns the user to `not_started`.
+
+Access:
+
+- authenticated user
+
+### Response
+
+```json
+{
+  "success": true,
+  "kyc_status": "not_started",
+  "verification_request_id": "verification-request-uuid"
+}
+```
+
+### Notes
+
+- only the latest pending KYC request can be cancelled
+- approved or already reviewed requests cannot be cancelled
+
+---
 
 ## GET /me/portfolio
 
@@ -1027,7 +1396,7 @@ Returns quote for a buy action.
 
 Access:
 
-- authenticated investor
+- authenticated user
 
 ### Request
 
@@ -1052,6 +1421,7 @@ Access:
 
 - use before investment confirmation UI
 - this is a quote, not final settlement truth
+- quote can be shown before KYC approval, but purchase preparation is blocked until KYC is approved
 
 ---
 
@@ -1061,7 +1431,7 @@ Prepares a transaction or signing payload for investment.
 
 Access:
 
-- authenticated investor
+- authenticated user
 
 ### Request
 
@@ -1086,6 +1456,11 @@ Access:
   "message": "Stub investment payload prepared"
 }
 ```
+
+### Notes
+
+- requires an active wallet binding
+- requires `kyc_status = approved`
 
 ---
 
@@ -1160,6 +1535,17 @@ Access:
 
 ## Admin Endpoints
 
+## GET /admin/assets
+
+Lists all assets for moderation and operational actions.
+
+### Response notes
+
+- includes pending review assets that are not public
+- includes issuer display name and location summary for moderation queues
+
+---
+
 ## POST /admin/assets/:id/verify
 
 Marks asset as verified or triggers associated verified flow.
@@ -1177,6 +1563,25 @@ Access:
 }
 ```
 
+For `rejected` or `needs_changes`, admins may include structured review issues:
+
+```json
+{
+  "outcome": "needs_changes",
+  "reason": "Financial data does not match the technical passport",
+  "issues": [
+    {
+      "field": "valuation_usdc",
+      "label": "Asset valuation",
+      "note": "Passport value differs from submitted price",
+      "actual_value": "100000 USDC",
+      "expected_value": "95000 USDC",
+      "document_type": "technical_passport"
+    }
+  ]
+}
+```
+
 ### Response
 
 ```json
@@ -1184,6 +1589,36 @@ Access:
   "success": true,
   "asset_id": "asset-uuid",
   "resulting_status": "verified"
+}
+```
+
+---
+
+## POST /admin/users/:id/kyc-review
+
+Resolves the latest pending KYC request for a user.
+
+Access:
+
+- authenticated admin
+
+### Request
+
+```json
+{
+  "outcome": "approved",
+  "reason": "All submitted KYC documents are valid"
+}
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "user_id": "user-uuid",
+  "verification_request_id": "verification-request-uuid",
+  "kyc_status": "approved"
 }
 ```
 
@@ -1273,17 +1708,19 @@ Access:
 ### Authentication Flow
 
 1. frontend detects whether Telegram Mini App init data is present
-2. if Mini App context exists, frontend prefers `POST /auth/telegram`
-3. otherwise frontend shows:
+2. if Mini App context exists, frontend first calls `POST /auth/telegram/preview`
+3. Mini App frontend shows a Telegram-first CTA based on `suggested_action`, then confirms through `POST /auth/telegram`
+4. otherwise frontend shows:
    - `POST /auth/register`
    - `POST /auth/login`
    - Google OAuth via `GET /auth/google/url` then `POST /auth/google`
    - Telegram Login Widget via `POST /auth/telegram/login`
-4. frontend stores `access_token` and `refresh_token`
-5. frontend rotates refresh state with `POST /auth/refresh`
-6. frontend branches UI using `user.role`
-7. optional wallet flow calls `POST /auth/wallet/link`
-8. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
+5. after Telegram sign-in, frontend may offer `POST /auth/password/link` so the same account can later be opened from a regular browser
+6. frontend stores `access_token` and `refresh_token`
+7. frontend rotates refresh state with `POST /auth/refresh`
+8. frontend branches UI using `user.role`
+9. optional wallet flow calls `POST /auth/wallet/link`
+10. frontend finalizes wallet binding with `POST /transactions/confirm` and `kind: "wallet_link"`
 
 ### Public Asset Discovery Flow
 

@@ -1,77 +1,53 @@
-# SolaShare Technical Documentation
+# SolaShare Documentation Index
 
-This directory contains the technical documentation for the SolaShare MVP.
+This directory is the main reference for architecture, repository layout, runtime setup, and
+operational workflows.
 
-## Contents
+## Recommended Reading Order
 
-- `01-architecture-overview.md` — high-level system architecture
-- `02-domain-model.md` — core business entities and relationships
-- `03-database-schema.md` — PostgreSQL schema design
-- `04-api-spec.md` — REST API contract for MVP
-- `05-onchain-design.md` — Solana program accounts and instructions
-- `06-sync-indexer.md` — blockchain sync and indexing strategy
-- `07-core-flows.md` — end-to-end product flows
-- `08-storage-and-documents.md` — storage architecture for metadata and proof files
-- `09-security-and-operational-risks.md` — key technical and operational risks
-- `10-deployment-and-roadmap.md` — deployment plan and phased roadmap
-- `TODO.md` — active implementation backlog and pending product tasks
+1. [../README.md](/home/const/solashare/README.md)
+2. [11-repository-map.md](/home/const/solashare/docs/11-repository-map.md)
+3. [13-dependencies-and-runtime.md](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+4. [15-monorepo-operations.md](/home/const/solashare/docs/15-monorepo-operations.md)
+5. [01-architecture-overview.md](/home/const/solashare/docs/01-architecture-overview.md)
+6. [12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md)
+7. [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md) when the task
+   touches Solana program behavior
 
-## MVP Goal
+## Core Documents
 
-SolaShare is an MVP for tokenizing yield-generating green energy assets on Solana.
+- [01-architecture-overview.md](/home/const/solashare/docs/01-architecture-overview.md)
+- [02-domain-model.md](/home/const/solashare/docs/02-domain-model.md)
+- [03-database-schema.md](/home/const/solashare/docs/03-database-schema.md)
+- [04-api-spec.md](/home/const/solashare/docs/04-api-spec.md)
+- [05-onchain-design.md](/home/const/solashare/docs/05-onchain-design.md)
+- [06-sync-indexer.md](/home/const/solashare/docs/06-sync-indexer.md)
+- [07-core-flows.md](/home/const/solashare/docs/07-core-flows.md)
+- [08-storage-and-documents.md](/home/const/solashare/docs/08-storage-and-documents.md)
+- [09-security-and-operational-risks.md](/home/const/solashare/docs/09-security-and-operational-risks.md)
+- [10-deployment-and-roadmap.md](/home/const/solashare/docs/10-deployment-and-roadmap.md)
 
-The first vertical is solar energy infrastructure, but the architecture is designed to be extensible to other eco-assets such as wind, small hydro, EV charging, and other yield-bearing green infrastructure.
+## Repository Guides
 
-## Architecture Principle
+- [11-repository-map.md](/home/const/solashare/docs/11-repository-map.md)
+  Directory-by-directory map of the monorepo.
+- [12-modules-reference.md](/home/const/solashare/docs/12-modules-reference.md)
+  Backend module and shared-library reference.
+- [13-dependencies-and-runtime.md](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+  Dependencies, env, quickstart, and operational commands.
+- [14-onchain-workspace.md](/home/const/solashare/docs/14-onchain-workspace.md)
+  Anchor workspace, program layout, and Solana-specific setup.
+- [15-monorepo-operations.md](/home/const/solashare/docs/15-monorepo-operations.md)
+  Monorepo conventions, root scripts, and PM2 usage.
 
-The system is split into three trust layers:
+## Related Materials
 
-1. **On-chain layer**
-   - ownership
-   - share minting
-   - revenue posting
-   - claim accounting
-   - immutable state transitions
+- [../research/research.pdf](/home/const/solashare/research/research.pdf)
 
-2. **Off-chain application layer**
-   - user profiles
-   - asset metadata
-   - documents
-   - portfolio views
-   - notifications
-   - business logic orchestration
+## Accuracy Rule
 
-3. **Storage layer**
-   - public documents
-   - proof bundles
-   - technical passports
-   - reports
-   - media assets
+If implementation and docs diverge:
 
-## Source of Truth
-
-- **On-chain** is the source of truth for ownership, distribution state, and claims.
-- **PostgreSQL** is the source of truth for product read models, metadata, and application UX.
-- **Object storage / Arweave / IPFS** is the source of truth for files and proofs.
-
-## MVP Scope
-
-The MVP should fully support:
-
-- create asset
-- define sale terms
-- mint fractional shares
-- invest in an asset
-- post revenue for a period
-- claim yield
-- display investor portfolio
-- display proof links and transaction history
-
-## Out of Scope for Initial MVP
-
-- full secondary market order book
-- advanced governance
-- automated AI verification
-- deep compliance stack
-- multi-currency settlement
-- advanced financial waterfalls
+- treat code as current runtime truth
+- update the relevant docs in the same change when practical
+- call out temporary mismatches explicitly

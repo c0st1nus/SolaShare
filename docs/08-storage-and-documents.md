@@ -113,6 +113,9 @@ May include:
 - sensitive legal documents
 - internal issuer files
 - admin review materials
+- investor KYC documents
+
+Private files should be stored in S3-compatible object storage with backend-controlled access paths.
 
 ---
 
@@ -120,6 +123,8 @@ May include:
 
 ### Upload phase
 1. file uploaded
+   - asset creation UI requests a short-lived upload token
+   - file is streamed through the direct upload endpoint into S3-compatible storage
 2. hash generated
 3. storage provider URI created
 4. DB row created
@@ -161,6 +166,7 @@ A proof bundle is a structured list of evidence references for an asset or reven
 For MVP:
 - store files off-chain
 - store URIs and hashes in DB
+- support direct multi-file upload for asset creation and register the files automatically
 - expose selected public files on asset pages
 - avoid overengineering encryption unless truly needed
 - make public proof links visible in the demo

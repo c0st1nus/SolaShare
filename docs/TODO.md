@@ -36,3 +36,4 @@ Implemented in the current backend and frontend contract shell.
 - wire the Next.js frontend to call the live auth endpoints instead of mock contract data
 - add production callback/redirect UX around Google sign-in
 - add end-user KYC transport when that workflow is ready
+- expose admin user-role management in the admin panel after bootstrap admin creation

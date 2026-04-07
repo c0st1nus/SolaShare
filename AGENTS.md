@@ -1,76 +1,149 @@
 # Repository Guidelines
 
 ## Project Purpose
-`solashare` is a backend for a Solana-based RWA platform. The service handles asset creation, document binding, verification workflow, token issuance preparation, on-chain event synchronization, revenue period accounting, claim flows, administrative actions, and auditability. Treat it as a clean backend service, not a fullstack app.
+
+`solashare` is a monorepo for a Solana-based RWA platform.
+
+Main areas:
+
+- `apps/api`: Bun + Elysia backend
+- `apps/web`: Next.js frontend
+- `programs/solashare-protocol`: Anchor workspace
+- `docs`: technical documentation
+- `research`: product and market research artifacts
+
+Default assumption: most tasks target `apps/api` unless the user explicitly asks for frontend or
+on-chain work.
 
 ## Core Stack
-Source of truth for dependencies and commands is [`package.json`](/home/const/solashare/package.json). Current stack: Bun, TypeScript, ElysiaJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod, Pino, `@solana/web3.js`, and Biome.
+
+Root command surface and backend dependencies are defined in
+[`package.json`](/home/const/solashare/package.json).
+
+Backend runtime stack:
+
+- Bun
+- TypeScript
+- ElysiaJS
+- Drizzle ORM
+- PostgreSQL
+- Redis
+- BullMQ
+- Zod
+- Pino
+- `@solana/web3.js`
+- `@solana/spl-token`
+- Biome
+
+Adjacent package manifests:
+
+- [`apps/web/package.json`](/home/const/solashare/apps/web/package.json)
+- [`programs/solashare-protocol/package.json`](/home/const/solashare/programs/solashare-protocol/package.json)
+- [`programs/solashare-protocol/programs/solashare_protocol/Cargo.toml`](/home/const/solashare/programs/solashare-protocol/programs/solashare_protocol/Cargo.toml)
 
 ## Documentation
-Project documentation lives in [`docs/`](/home/const/solashare/docs). Treat it as required context when working on architecture, domain behavior, API contracts, database design, indexing, on-chain flows, storage, security, and deployment decisions. Start with [`docs/README.md`](/home/const/solashare/docs/README.md), then open the relevant topic files such as `01-architecture-overview.md`, `03-database-schema.md`, `04-api-spec.md`, or `05-onchain-design.md`. If implementation and docs diverge, update the docs or explicitly call out the mismatch.
+
+Project documentation lives in [`docs`](/home/const/solashare/docs).
+
+Start with:
+
+- [`docs/README.md`](/home/const/solashare/docs/README.md)
+- [`docs/11-repository-map.md`](/home/const/solashare/docs/11-repository-map.md)
+- [`docs/12-modules-reference.md`](/home/const/solashare/docs/12-modules-reference.md)
+- [`docs/13-dependencies-and-runtime.md`](/home/const/solashare/docs/13-dependencies-and-runtime.md)
+- [`docs/14-onchain-workspace.md`](/home/const/solashare/docs/14-onchain-workspace.md)
+- [`docs/15-monorepo-operations.md`](/home/const/solashare/docs/15-monorepo-operations.md)
+
+If implementation and docs diverge, update the docs or explicitly call out the mismatch.
 
 ## Preferred Structure
-Organize code by responsibility:
 
-- `src/index.ts`: process entrypoint
-- `src/app.ts`: Elysia app wiring
-- `src/config/`: env parsing, config, constants
-- `src/lib/`: shared adapters such as logger, db, redis, Solana clients
-- `src/modules/`: domain modules like `assets`, `verifications`, `shares`, `revenue`, `claims`, `webhooks`, `jobs`
-- `src/db/`: Drizzle schema, migrations, seeds
-- `src/queues/`: BullMQ queues and workers
-- `src/plugins/`: Elysia plugins
-- `src/types/`: shared types
-- `src/tests/`: tests when introduced
+Backend layout:
 
-Keep HTTP handlers thin. Business logic belongs in services. Database access must stay isolated from transport code.
+- `apps/api/src/index.ts`: process entrypoint
+- `apps/api/src/app.ts`: Elysia app wiring
+- `apps/api/src/config`: env parsing and runtime config
+- `apps/api/src/db`: Drizzle schema and DB access
+- `apps/api/src/lib`: shared adapters
+- `apps/api/src/modules`: domain modules
+- `apps/api/src/plugins`: Elysia plugins
+- `apps/api/src/tests`: backend tests
 
-## Domain Model
-Design for these core entities: `Asset`, `AssetDocument`, `VerificationRequest`, `VerificationDecision`, `ShareMint`, `ShareHoldingSnapshot`, `RevenuePeriod`, `RevenueDeposit`, `Claim`, `WalletBinding`, `AuditLog`, `WebhookEvent`, `JobExecutionLog`.
+Repository-level areas:
+
+- `apps/web`: frontend app
+- `programs/solashare-protocol`: on-chain workspace
+- `scripts`: root helper scripts
+- `docs`: documentation
+- `drizzle`: migrations
+
+Keep handlers thin. Put business logic in services. Keep DB access out of transport code.
 
 ## Commands
-Use existing scripts; do not replace them without reason:
 
-- `bun run dev`
-- `bun run lint`
-- `bun run format`
+Common root commands:
+
+- `bun run dev:api`
+- `bun run dev:web`
+- `bun run dev:stack`
 - `bun run check`
-- `bun run db:generate`
+- `bun run lint`
+- `bun run test`
+- `bun run build:web`
+- `bun run pm2:start`
 - `bun run db:migrate`
-- `bun run db:push`
-- `bun run db:studio`
+- `bun run bootstrap:admin --email admin@example.com --password 'StrongPassword123!'`
+
+Useful helpers:
+
+- `./scripts/start-localnet.sh`
+- `./scripts/stop-localnet.sh`
+- `./scripts/dev-workspace.sh`
 
 ## Coding Rules
-Write strict TypeScript. Avoid `any` unless unavoidable. Use Zod for external payload validation. Prefer small functions, explicit types, and domain-oriented names. Use Biome for formatting and linting. Log important failures and lifecycle events through Pino. Do not mix Solana, DB, or queue logic into route handlers.
 
-## Data, Queue, and Solana Rules
-Use Drizzle schema-first/code-first migrations only. Avoid raw SQL unless justified and documented. Keep PostgreSQL schema normalized and auditable for financial/status data.
+Write strict TypeScript. Avoid `any` unless there is no clean alternative. Use Zod for external
+payload validation. Prefer small functions, explicit types, and domain-oriented names. Use Biome
+for formatting and linting. Log important failures and lifecycle events through Pino.
 
-Use Redis for cache, deduplication, temporary state, and BullMQ. Long-running work must leave the HTTP lifecycle. Webhooks and event consumers must be idempotent and retry-safe.
+For on-chain code:
 
-Encapsulate Solana integration in a dedicated layer, ideally `src/lib/solana` or module-local adapters. Separate on-chain reads, transaction preparation, and event processing. All RPC URLs, program IDs, and keys must come from config/env.
+- keep Rust/Anchor changes scoped and explicit
+- do not change PDA strategy, account layout, or instruction semantics casually
+- document any change that affects backend transaction preparation or sync logic
 
-## Env and Security
-Validate env on startup and fail fast with clear errors. At minimum support: `PORT`, `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `SOLANA_RPC_URL`, `SOLANA_COMMITMENT`, and `HELIUS_API_KEY` when indexing/webhooks are enabled. Never hardcode secrets or log them.
+## Data, Queue, And Solana Rules
 
-## API and Observability
-Keep the API REST-like and predictable. Return structured errors and appropriate HTTP status codes. Expose a simple health endpoint; add readiness/liveness endpoints when useful. Log app startup, config failures, DB failures, webhook failures, job execution, and important asset status transitions.
+Use Drizzle schema-first/code-first migrations only. Avoid raw SQL unless justified and documented.
 
-## Dev Infrastructure and Change Workflow
-Local dev infrastructure should be simple. Prefer `docker compose` for `postgres` and `redis`, with explicit ports and persistent volumes. Add `app` or `worker` services only if they materially improve development.
+Use Redis for cache, deduplication, temporary state, WebSocket coordination, and BullMQ.
+Long-running work must leave the HTTP lifecycle.
 
-After every substantive change:
+Encapsulate Solana integration in `apps/api/src/lib/solana` or module-local adapters. Separate:
+
+- on-chain reads
+- transaction preparation
+- event processing
+- backend reconciliation
+
+All RPC URLs, program IDs, secrets, and keys must come from config or env.
+
+## Dev Workflow
+
+Checked-in local infrastructure is based on
+[`docker-compose.yml`](/home/const/solashare/docker-compose.yml).
+
+After substantive changes:
 
 1. Run `bun run check`
 2. Run `bun run lint`
-3. Run tests if a real test runner exists
+3. Run tests for the touched area
 4. Fix issues instead of silencing them
 
-Before any commit:
+Before commit:
 
 1. Run `bun run check`
-2. Ensure the TypeScript compiler is clean with no `tsc --noEmit` errors
+2. Ensure TypeScript is clean
 3. Run `bun run lint`
-4. Fix all reported issues before creating the commit
-
-Do not add unnecessary frameworks, swap runtimes, replace Elysia or Drizzle, or over-engineer the dev infrastructure.
+4. Run `bun run test` when backend behavior changed
+5. Fix all reported issues

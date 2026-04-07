@@ -11,9 +11,12 @@ node_modules
 # next.js
 /.next/
 /out/
+solashare-frontend/.next/
+solashare-frontend/out/
 
 # production
 /build
+solashare_program/target/
 
 # misc
 .DS_Store
@@ -34,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local solana state
+.solana/
+solashare_program/test-ledger/
+
 **/*.trace
 **/*.zip
 **/*.tar.gz
@@ -41,3 +48,12 @@ yarn-error.log*
 **/*.log
 package-lock.json
 **/*.bun
+
+#linux cache
+# IDE & System Cache
+Cache/
+CachedData/
+CachedConfigurations/
+.vscode/
+*.log
+node_modules/

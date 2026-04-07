@@ -59,8 +59,12 @@ An issuer creates a new green energy asset and prepares it for tokenized offerin
    - energy type
    - capacity
    - location
-4. issuer uploads supporting documents
+4. issuer uploads one or more supporting documents directly from the creation UI
+   - files are uploaded to S3-compatible storage
+   - backend registers document rows with generated URI and content hash
 5. issuer configures sale terms
+   - issuer enters valuation and minimum investment
+   - backend derives share count, share price, and raise target from capacity and valuation
 6. system generates asset metadata URI / proof bundle reference
 7. issuer submits asset to next lifecycle step
 8. if protocol design requires, on-chain asset account is created
@@ -88,12 +92,19 @@ An investor buys fractional exposure to the asset.
    - shares to receive
    - price
    - fees
-6. frontend requests investment transaction preparation
-7. investor signs transaction
-8. transaction is sent to Solana
-9. indexer confirms transaction
-10. holdings snapshot is updated
-11. investment appears in portfolio
+6. backend verifies the asset has already been initialized on-chain:
+   - `AssetAccount` exists
+   - share mint exists
+   - USDC vault exists
+7. frontend requests investment transaction preparation
+8. backend prepares:
+   - idempotent investor share ATA creation
+   - `buy_shares`
+9. investor signs transaction
+10. transaction is sent to Solana
+11. backend confirmation / indexer verifies the real on-chain instruction and token balance movements
+12. holdings snapshot is updated
+13. investment appears in portfolio
 
 ### Output
 - investor owns asset shares
