@@ -1,0 +1,154 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f6f6f6;
+  --surface: #ffffff;
+  --surface-low: #f0f1f1;
+  --border: rgba(0, 0, 0, 0.06);
+  --text: #2d2f2f;
+  --text-muted: #5a5c5c;
+  --text-faint: #9a9c9c;
+  --accent-green-ui: #0f9f6e;
+  --accent-green-ui-rgb: 15 159 110;
+  --wallet-accent: var(--accent-green-ui);
+}
+
+.dark {
+  --bg: #0c0f0f;
+  --surface: #1a1c1c;
+  --surface-low: #222525;
+  --border: rgba(255, 255, 255, 0.07);
+  --text: #f0f2f0;
+  --text-muted: #9c9d9d;
+  --text-faint: #5a5c5c;
+  --accent-green-ui: #14f195;
+  --accent-green-ui-rgb: 20 241 149;
+  --wallet-accent: var(--accent-green-ui);
+}
+
+@layer base {
+  html {
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    transition:
+      background-color 0.3s,
+      color 0.3s;
+  }
+  ::-webkit-scrollbar {
+    width: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--bg);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  .sol-gradient {
+    background: linear-gradient(135deg, #14f195 0%, #9945ff 100%);
+  }
+  .sol-text {
+    background: linear-gradient(135deg, #14f195 0%, #9945ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sol-glow {
+    box-shadow: 0 4px 20px -2px rgba(20, 241, 149, 0.3);
+  }
+  .sol-glow-lg {
+    box-shadow: 0 8px 32px rgba(20, 241, 149, 0.2);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+    padding: 1.5rem;
+    transition: all 0.2s;
+  }
+  .card-hover {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+    transition: all 0.2s;
+  }
+  .card-hover:hover {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+    border-color: rgba(153, 69, 255, 0.15);
+    transform: translateY(-1px);
+  }
+
+  .btn-sol {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full font-bold text-sm text-white sol-gradient sol-glow active:scale-95 transition-all hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-dark {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm bg-[#2d2f2f] dark:bg-white text-white dark:text-[#2d2f2f] hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-white active:scale-95 transition-all hover:brightness-105 disabled:cursor-not-allowed;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm border transition-all active:scale-95 disabled:opacity-50;
+    border-color: var(--border);
+    color: var(--text-muted);
+  }
+  .btn-outline:hover {
+    border-color: #9945ff40;
+    color: #9945ff;
+    background: #9945ff08;
+  }
+
+  .input-new {
+    @apply w-full rounded-2xl px-4 py-3.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-[#9945FF]/20 border-0;
+    background: var(--surface-low);
+    color: var(--text);
+  }
+  .input-new::placeholder {
+    color: var(--text-faint);
+  }
+
+  .label-xs {
+    @apply text-[10px] font-black uppercase tracking-widest;
+    color: var(--text-faint);
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all;
+    color: var(--text-muted);
+  }
+  .sidebar-link:hover {
+    background: var(--surface-low);
+    color: var(--text);
+  }
+  .sidebar-link-active {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
